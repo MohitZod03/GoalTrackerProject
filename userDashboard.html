@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        /* General Body and Layout Styles */
+        
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Poppins', sans-serif;
+            height: 100%;
+            background-color: #f4f7fc;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            /* Prevent scrolling beyond the screen */
+        }
+        /* Top Navigation Bar Styles */
+        
+        .top-nav {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        /* Main Content Area */
+        
+        .user-dashboard-container {
+            display: flex;
+            flex: 1;
+            /* Ensure the content area takes the remaining space */
+            overflow: hidden;
+            height: calc(100vh - 60px);
+            /* Full height minus the top-nav */
+        }
+        /* Sidebar Styles */
+        
+        .sidebar {
+            width: 250px;
+            background-color: #34495e;
+            color: #ecf0f1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
+            height: 100%;
+            overflow-y: auto;
+        }
+        
+        .sidebar a {
+            color: #ecf0f1;
+            padding: 15px;
+            text-decoration: none;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: background-color 0.3s;
+            cursor: pointer;
+            /* Make it clear that links are clickable */
+        }
+        
+        .sidebar a:hover {
+            background-color: #1abc9c;
+        }
+        
+        .sidebar a.clicked {
+            background-color: #1abc9c;
+        }
+        /* Profile Link Color */
+        
+        .sidebar .profile {
+            background-color: #2c3e50;
+            /* Darker version of sidebar */
+            color: white;
+            font-weight: bold;
+        }
+        
+        .sidebar .profile:hover {
+            background-color: #1abc9c;
+            /* Greenish hover effect */
+        }
+        /* Tasks Section */
+        
+        .sidebar .tasks-section {
+            margin-top: 20px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #ecf0f1;
+            text-transform: uppercase;
+            margin-bottom: 15px;
+        }
+        
+        .sidebar .task-category {
+            margin-bottom: 10px;
+            color: #ecf0f1;
+            padding-left: 15px;
+        }
+        
+        .sidebar .task-category:hover {
+            background-color: #1abc9c;
+        }
+        /* Content Area Styles (Right side) */
+        
+        .content {
+            flex: 1;
+            background-color: white;
+            padding: 10px;
+            overflow-y: auto;
+            height: 100%;
+            box-sizing: border-box;
+        }
+        /* Footer Styles */
+        
+        .footer {
+            background-color: #34495e;
+            color: #ecf0f1;
+            text-align: center;
+            padding: 10px;
+            width: 100%;
+        }
+        /* Dropdown and Table Styles */
+        
+        select {
+            padding: 10px;
+            margin-bottom: 20px;
+            width: 200px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        table th,
+        table td {
+            border: 1px solid #ccc;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        table th {
+            background-color: #f2f2f2;
+        }
+        
+        tr:hover {
+            background: #f1f1f1;
+            cursor: pointer;
+        }
+        /* Responsiveness for Mobile */
+        
+        @media (max-width: 768px) {
+            .user-dashboard-container {
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100%;
+                height: auto;
+                position: relative;
+            }
+            .content {
+                margin-left: 0;
+            }
+        }
+        /* -----------------For popup-------------------------- */
+        /* Overlay to cover background */
+        
+        .popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            /* Dark semi-transparent overlay */
+            z-index: 999;
+            /* Ensures it's above everything */
+            display: none;
+            /* Initially hidden */
+        }
+        /* Popup Styling */
+        
+        #popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 450px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            display: none;
+            padding: 20px;
+            animation: fadeIn 0.3s ease-in-out;
+            z-index: 1000;
+            overflow: hidden;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -55%);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, -50%);
+            }
+        }
+        
+        .popup-header {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            border-bottom: 2px solid #2c3e50;
+            padding-bottom: 10px;
+            text-align: center;
+        }
+        
+        .popup-content {
+            font-size: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 10px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        .popup-content label {
+            font-weight: bold;
+        }
+        
+        .popup-content input,
+        .popup-content select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        
+        .popup-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+        
+        .popup-buttons button {
+            width: 48%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        
+        .popup-buttons .cancel {
+            background: #ccc;
+        }
+        
+        .popup-buttons .done {
+            background: #007bff;
+            color: white;
+        }
+        
+        .popup-buttons .done:hover {
+            background: #0056b3;
+        }
+        
+        .popup-buttons .cancel:hover {
+            background: #b3b3b3;
+        }
+        /* Add near your popup CSS */
+        
+        #userTaskPopup {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.3);
+            z-index: 2000;
+            width: 480px;
+            /* similar fixed width for balance */
+            max-width: 90%;
+            /* responsive fallback */
+            overflow: hidden;
+            /* keeps header/footer aligned */
+            animation: fadeInScale 0.25s ease-out;
+            /* smooth entry */
+        }
+        
+        #userTaskPopup .popup-header {
+            font-weight: 600;
+            padding: 14px 20px;
+            border-bottom: 1px solid #e5e5e5;
+            text-align: center;
+            font-size: 16px;
+            background: #f8f9fa;
+            /* light header background like responses */
+        }
+        
+        #userTaskPopupOverlay {
+            position: fixed;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.45);
+            z-index: 1999;
+        }
+        
+        #userTaskPopup input,
+        #userTaskPopup select {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0 14px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            transition: border-color 0.2s;
+        }
+        
+        #userTaskPopup input:focus,
+        #userTaskPopup select:focus {
+            border-color: #007bff;
+            /* highlight on focus */
+            outline: none;
+        }
+        
+        #userTaskPopup label {
+            font-weight: 600;
+            margin-top: 10px;
+            display: block;
+            font-size: 14px;
+            color: #333;
+        }
+        /* Optional smooth animation */
+        
+        @keyframes fadeInScale {
+            0% {
+                opacity: 0;
+                transform: translate(-50%, -45%) scale(0.95);
+            }
+            100% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+        /* Footer buttons container - stick to bottom */
+        
+        #userTaskPopup .popup-footer {
+            display: flex;
+            justify-content: space-between;
+            position: sticky;
+            /* Sticks inside popup */
+            bottom: 0;
+            /* Stick at bottom */
+            background: #fff;
+            /* Background so content doesn’t overlap */
+            padding: 10px;
+            /* Space inside */
+            border-top: 1px solid #ddd;
+            margin-top: 10px;
+            /* Small gap above */
+        }
+        /* Buttons - same size & style */
+        
+        #userTaskPopup .popup-footer button {
+            width: 48%;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        /* Cancel button */
+        
+        #userTaskPopup .popup-footer .cancel {
+            background: #ccc;
+        }
+        
+        #userTaskPopup .popup-footer .cancel:hover {
+            background: #b3b3b3;
+        }
+        /* Save button */
+        
+        #userTaskPopup .popup-footer .done {
+            background: #007bff;
+            color: white;
+        }
+        
+        #userTaskPopup .popup-footer .done:hover {
+            background: #0056b3;
+        }
+        /* Style for Save All Button */
+        
+        #saveAllButton {
+            padding: 8px 16px;
+            margin-left: 20px;
+            border: none;
+            background: #007bff;
+            color: white;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        
+        #saveAllButton:hover {
+            background: #0056b3;
+        }
+        /* ----------------------------Initial Loader--------------------------------- */
+        /* Full-screen overlay to block interactions */
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            /* Dark semi-transparent */
+            z-index: 9999;
+            /* Above everything */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.3s ease-in-out;
+        }
+        /* Centered loading container */
+        
+        .loading-container {
+            text-align: center;
+            color: white;
+            font-size: 20px;
+        }
+        /* Spinner animation */
+        
+        .loader {
+            border: 6px solid rgba(255, 255, 255, 0.3);
+            border-top: 6px solid #fff;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 15px auto;
+        }
+        /* Spinner animation keyframes */
+        
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+        /* Hide overlay when data is loaded */
+        
+        .hidden {
+            opacity: 0;
+            pointer-events: none;
+            /* Make non-clickable */
+        }
+        /* ---------------------------------- Profile Page----------------------------- */
+        /* Profile Section Styling */
+        
+        .profile-container {
+            width: 50%;
+            margin: 40px auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        /* Header */
+        
+        .profile-header h2 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #333;
+            border-bottom: 2px solid #2c3e50;
+            padding-bottom: 10px;
+        }
+        /* Profile Content */
+        
+        .profile-content {
+            padding: 20px;
+        }
+        /* Profile Details */
+        
+        .profile-details {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        /* Profile Row */
+        
+        .profile-row {
+            display: flex;
+            justify-content: space-between;
+            background: #f9f9f9;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: 500;
+        }
+        
+        .profile-row label {
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        /* Responsive */
+        
+        @media (max-width: 768px) {
+            .profile-container {
+                width: 90%;
+            }
+        }
+        /* Table header dark background */
+        
+        #userTasksTable thead tr {
+            background-color: #2c3e50;
+            color: black;
+        }
+        /* Default row style */
+        
+        #userTasksTable tbody tr {
+            background-color: white;
+            color: black;
+        }
+        /* Selected row style - slightly lighter than header */
+        
+        #userTasksTable tbody tr.selected {
+            background-color: #34495e;
+            color: white;
+        }
+        /* Button style - corrected comment and strong selector */
+        /* Make button bigger and more rounded; high specificity to avoid overrides */
+        
+        button#requestAccessBtn[onclick="requestAccess()"],
+        #requestAccessBtn[onclick="requestAccess()"] {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            /* bigger button size */
+            padding: 14px 26px !important;
+            /* increased padding */
+            font-size: 16px !important;
+            /* larger text */
+            min-width: 180px !important;
+            /* consistent width so it doesn't shrink */
+            height: auto !important;
+            line-height: 1 !important;
+            /* look */
+            background-color: #111 !important;
+            /* keep dark background (change if needed) */
+            color: #ffffff !important;
+            /* text color */
+            border: 0 !important;
+            border-radius: 20px !important;
+            /* increased radius for rounded edges */
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+            cursor: pointer !important;
+            white-space: nowrap !important;
+            text-transform: none !important;
+            /* smooth transitions */
+            transition: transform .08s ease, background-color .18s ease, box-shadow .18s ease !important;
+            margin-left: auto !important;
+            /* keeps it pushed right in the flex container */
+            -webkit-appearance: none !important;
+            appearance: none !important;
+        }
+        /* Hover state when enabled */
+        
+        button#requestAccessBtn[onclick="requestAccess()"]:not(:disabled),
+        #requestAccessBtn[onclick="requestAccess()"]:not(:disabled) {
+            transform: translateY(-1px) !important;
+            background-color: #222 !important;
+            /* slightly lighter on hover */
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22) !important;
+        }
+        /* Focus for keyboard users */
+        
+        button#requestAccessBtn[onclick="requestAccess()"]:focus {
+            outline: 3px solid rgba(34, 34, 34, 0.12) !important;
+            outline-offset: 2px !important;
+        }
+        /* Disabled look */
+        
+        button#requestAccessBtn[onclick="requestAccess()"]:disabled,
+        #requestAccessBtn[onclick="requestAccess()"]:disabled {
+            background-color: #bfbfbf !important;
+            color: #666 !important;
+            box-shadow: none !important;
+            cursor: not-allowed !important;
+            transform: none !important;
+        }
+        /* mohit - visually disabled row */
+        
+        #userTasksTable tbody tr.disabled-row {
+            background-color: #f5f5f5;
+            color: #888;
+        }
+        
+        #userTasksTable td a,
+        #userTasksTable td a:visited,
+        #userTasksTable td a:link {
+            color: #333 !important;
+            /* Normal dark color instead of purple */
+            text-decoration: none;
+            /* Remove underline */
+        }
+        /* small table styling (optional) */
+        
+        #requestedTasksTable th,
+        #requestedTasksTable td {
+            padding: 6px;
+            border: 1px solid #e0e0e0;
+            text-align: left;
+            font-size: 14px;
+        }
+    </style>
+    <script>
+    </script>
+</head>
+
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-container">
+            <div class="loader"></div>
+            <p>Loading data, please wait...</p>
+        </div>
+    </div>
+    <!-- Top Navigation -->
+    <div class="top-nav">
+        <div class="logo">Goals Tracker</div>
+        <div class="user-info" id="user-info">Welcome, User</div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="user-dashboard-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <a href="#" class="profile" id="p" onclick="viewProfile()">Profile</a>
+            <a href="#" class="task-category" id="ut" onclick="handleUserTasks()">User Tasks</a>
+            <div class="tasks-section">Tasks</div>
+            <a href="#" class="task-category" id="ct" onclick="handleAllCurrentTasks()">All Current Task</a>
+            <a href="#" class="task-category" id="wt" onclick="handleWeeklyTasks()">Weekly Tasks</a>
+            <a href="#" class="task-category" id="ft" onclick="handleFortnightlyTasks()">Fortnightly Tasks</a>
+            <a href="#" class="task-category" id="mt" onclick="handleMonthlyTasks()">Monthly Tasks</a>
+            <a href="#" class="task-category" id="qt" onclick="handleQuarterlyTasks()">Quarterly Tasks</a>
+            <a href="#" class="task-category" id="bt" onclick="handleBiyearlyTasks()">Biyearly Tasks</a>
+            <a href="#" class="task-category" id="yt" onclick="handleYearlyTasks()">Yearly Tasks</a>
+        </div>
+
+        <!-- Main Content Section -->
+        <div class="content">
+
+            <!-- Profile Section (Initially Hidden) -->
+            <div id="profileSection" class="profile-container" style="display: none;">
+                <div class="profile-header">
+                    <h2>Profile</h2>
+                </div>
+
+                <div class="profile-content">
+                    <div class="profile-details">
+                        <div class="profile-row">
+                            <label>Name:</label>
+                            <span id="profileName"></span>
+                        </div>
+
+                        <div class="profile-row">
+                            <label>Email:</label>
+                            <span id="profileEmail"></span>
+                        </div>
+
+                        <div class="profile-row">
+                            <label>Profile Name:</label>
+                            <span id="profileProfileName"></span>
+                        </div>
+
+                        <div class="profile-row">
+                            <label>School Name:</label>
+                            <span id="profileSchoolName"></span>
+                        </div>
+
+                        <div class="profile-row">
+                            <label>Wing Name:</label>
+                            <span id="profileWingName"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User task Section -->
+            <div id="userTasksSection" style="display:none; position: relative;">
+
+                <!-- My Tasks Section -->
+                <div style="display:flex; align-items:center; margin-bottom:6px;">
+                    <h2 style="margin:0;">My Tasks</h2>
+                    <button id="requestAccessBtn" disabled onclick="requestAccess()" style="margin-left:auto;">
+      Request Access To Edit
+    </button>
+                </div>
+
+                <table id="userTasksTable">
+                    <thead>
+                        <tr>
+                            <th>Select</th>
+                            <th>Task ID</th>
+                            <th>Goal</th>
+                            <th>Frequency</th>
+                            <th>Task Name</th>
+                            <th>Key Results</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+
+                <!-- Requested Tasks Section -->
+                <div id="requestedTasksSection" style="display:none; margin-top:30px; margin-bottom:20px;">
+
+                    <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+                        <h3 style="margin:0;">Requested Task for changes.</h3>
+
+                        <!-- Only refresh button here -->
+                        <button id="refreshRequestedBtn" onclick="refreshRequestedTasks()" style="margin-left:auto;">🔄 Refresh</button>
+                    </div>
+
+                    <table id="requestedTasksTable" style="width:100%; border-collapse:collapse; margin-bottom:8px;">
+                        <thead>
+                            <tr style="background:#f0f0f0;">
+                                <th style="padding:6px; border:1px solid #ddd;">Task ID</th>
+                                <th style="padding:6px; border:1px solid #ddd;">Task Name</th>
+                                <th style="padding:6px; border:1px solid #ddd;">Key Results</th>
+                                <th style="padding:6px; border:1px solid #ddd;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <!-- User Task Edit Popup (UI-only) -->
+                <div id="userTaskPopupOverlay" class="popup-overlay" style="display:none;"></div>
+
+                <div id="userTaskPopup" class="popup" style="display:none; max-width:520px;">
+                    <div class="popup-header">Edit Task </div>
+                    <div class="popup-content" style="max-height:60vh; overflow:auto; padding:16px;">
+                        <label>Task ID:</label>
+                        <input type="text" id="ut_taskId" readonly />
+
+                        <label>Goal:</label>
+                        <input type="text" id="ut_goal" readonly />
+
+                        <label>Frequency (old):</label>
+                        <input type="text" id="ut_freq_old" readonly />
+
+                        <label>Frequency (new):</label>
+                        <select id="ut_freq_new">
+      <option value="">-- keep same --</option>
+      <option>Weekly</option>
+      <option>Fortnightly</option>
+      <option>Monthly</option>  
+      <option>Quarterly</option>
+      <option>Biyearly</option>
+      <option>Yearly</option>
+    </select>
+
+                        <label>Task Name (old):</label>
+                        <input type="text" id="ut_taskname_old" readonly />
+
+                        <label>Task Name (new):</label>
+                        <input type="text" id="ut_taskname_new" placeholder="Enter new task name" />
+
+                        <label>Key Result (old):</label>
+                        <input type="text" id="ut_key_old" readonly />
+
+                        <label>Key Result (new):</label>
+                        <input type="text" id="ut_key_new" placeholder="Enter new key result" />
+
+                        <label>Evidence (old):</label>
+                        <input type="text" id="ut_evidence_old" readonly style="cursor:pointer;color:blue" />
+
+                        <label>Evidence (new):</label>
+                        <input type="text" id="ut_evidence_new" placeholder="Paste URL or text" />
+
+                        <div class="popup-footer">
+                            <button onclick="closeUserTaskPopup()" class="cancel">Cancel</button>
+                            <button onclick="saveUserTaskEdit()" class="done">Done </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="taskSection">
+
+
+                <!-- Dropdown to select frequency -->
+                <select id="taskFilter" onchange="populateTable()">
+                    <option value="current">Current Task</option>
+                    <option value="lastWeek">Last Week Task</option>
+                    <option value="all">All Tasks</option>
+                </select>
+
+                <!-- Save All Button -->
+                <button id="saveAllButton" onclick="saveAllTasks()">Save All</button>
+
+                <!-- Table to display data -->
+                <table id="taskTable">
+                    <thead>
+                        <tr>
+                            <th>Task Id</th>
+                            <th>Frequency</th>
+                            <th>Task Name</th>
+                            <th>Key Results</th>
+                            <th>Progress Status</th>
+                            <th>Due Date</th>
+                            <th>Escalation</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Dynamic rows will go here -->
+                    </tbody>
+                </table>
+
+                <!-- Background Overlay -->
+                <div id="popup-overlay" class="popup-overlay"></div>
+
+                <!-- Popup Structure -->
+                <div id="popup">
+                    <div class="popup-header">Task Details</div>
+                    <div class="popup-content">
+                        <label>Task ID:</label>
+                        <input type="text" id="popupTaskId" disabled>
+
+                        <label>Goal:</label>
+                        <input type="text" id="goal" disabled>
+
+                        <label>Task Name:</label>
+                        <input type="text" id="popupTaskName" disabled>
+
+                        <label>Key Results:</label>
+                        <input type="text" id="keyResults" disabled>
+
+                        <label>Progress Status:</label>
+                        <select id="popupProgressStatus">
+                            <option value="Not Started">Not Started</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="Done">Done</option>
+                            <option value ="NA">Not Applicable</option>
+                        </select>
+
+                        <label>Remarks:</label>
+                        <input type="text" id="popupRemarks">
+
+                        <label>Task Evidence:</label>
+                        <input type="text" id="popupTaskEvidence" readonly onclick="if(this.value.trim()) window.open(this.value, '_blank')" style="cursor: pointer; color: blue; text-decoration: underline;">Add commentMore actions
+
+
+                        <label>New Evidence:</label>
+                        <input type="text" id="popupEvidence" />
+
+                        <label>Due Date:</label>
+                        <input type="text" id="popupDueDate" disabled>
+
+                        <label>Escalation:</label>
+                        <input type="text" id="popupEscalation" disabled>
+                    </div>
+
+                    <div class="popup-buttons">
+                        <button class="cancel" onclick="closePopup()">Cancel</button>
+                        <button class="done" onclick="onDone()">Done</button>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        &copy; 2025 DPS Goals Tracker. All rights reserved.
+    </div>
+</body>
+
+</html>

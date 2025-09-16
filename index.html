@@ -1,0 +1,1585 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Access Validation</title>
+    <style>
+        .validation-container {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        
+        h1 {
+            font-size: 22px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        #message {
+            font-size: 16px;
+            color: #555;
+            margin-bottom: 10px;
+            transition: all 0.3s ease-in-out;
+        }
+        
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #007bff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 10px auto;
+        }
+        
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+    <script>
+        // IndexedDB Configuration
+        const DB_NAME = "Goals";
+        const DB_VERSION = 1;
+        const STORE_NAME_RESPONSES = "Responses";
+        const STORE_NAME_TASKS = "Tasks";
+        let DB_DATA_RESPONSES;
+        let DB_DATA_TASKS;
+
+        //1.Mohit 
+        const STORE_NAME_REQUESTS = "Requests";
+        let DB_DATA_REQUESTS = [];
+
+
+
+
+        // ---------------index---------------------------------
+        // remaining the saving part to sheet
+        // Show Task instead of task id and the fomating of date
+        async function checkAccess() {
+            google.script.run.withSuccessHandler(handleResponse).checkUserAccess();
+        }
+
+        async function handleResponse(response) {
+            if (response.status === 'success') {
+                await loadAndSyncData();
+
+            } else {
+                showErrorForTheInitialScreen(response.message);
+            }
+        }
+
+        async function loadDashboard(dashboardHTML) {
+            document.body.innerHTML = dashboardHTML;
+            google.script.run.withSuccessHandler(afterDashboardLoad).fetchUserName();
+        }
+
+        function showErrorForTheInitialScreen(message) {
+            const messageElement = document.getElementById('message');
+            const loaderElement = document.getElementById('loader');
+
+            loaderElement.style.display = 'none'; // Hide loader
+            messageElement.textContent = message;
+            messageElement.style.color = 'red';
+        }
+
+        window.onload = checkAccess;
+
+        //----------------userDashboard------------------------------
+
+        //-----------------------Sesssion values set and retrieve---------------------------
+        function createAndUpdateSessionStorage(key, value) {
+            sessionStorage.setItem(key, value);
+        }
+
+        function getSessionStorage(key) {
+            let sessionStorageValue = sessionStorage.getItem(key);
+            return sessionStorageValue;
+        }
+
+        async function afterDashboardLoad(userName) {
+            createAndUpdateSessionStorage('dataIdsForSaving', 'none');
+            const userInfo = document.getElementById('user-info');
+            userInfo.textContent = `Welcome, ${userName}`;
+
+            // Load cached requests (so the small table is available immediately)
+            await loadCachedRequestsFromIndexedDB();
+
+            // NEW: load cached tasks so UserTasks can render instantly from local cache
+            try {
+                const tasksLoaded = await loadTasksFromIndexedDB(); // returns true if tasks found
+                if (tasksLoaded) {
+                    // mark that user tasks are available from cache (prevents loader on first click)
+                    sessionStorage.setItem('userTasksLoaded', '1');
+                }
+            } catch (e) {
+                console.warn('loadTasksFromIndexedDB failed at startup', e);
+            }
+
+            // then show weekly tasks by default
+            handleWeeklyTasks();
+        }
+
+        async function getCachedUserTasks() {
+            try {
+                const data = await getDataFromIndexedDB(STORE_NAME_TASKS, 'TaskId');
+                return Array.isArray(data) ? data : [];
+            } catch (e) {
+                console.warn('[getCachedUserTasks] failed', e);
+                return [];
+            }
+        }
+
+
+        const selectedFrequency = 'Weekly';
+
+        //----------------on clicks-------------------------------
+        function viewProfile() {
+            sideBardOptionsClickHandler('#p', 'Profile');
+        }
+
+        function handleUserTasks() {
+            sideBardOptionsClickHandler('#ut', 'UserTasks');
+        }
+
+
+        function handleWeeklyTasks() {
+            sideBardOptionsClickHandler('#wt', 'Weekly');
+        }
+
+        function handleFortnightlyTasks() {
+            sideBardOptionsClickHandler('#ft', 'Fortnightly');
+        }
+
+        function handleMonthlyTasks() {
+            sideBardOptionsClickHandler('#mt', 'Monthly');
+        }
+
+        function handleQuarterlyTasks() {
+            sideBardOptionsClickHandler('#qt', 'Quarterly');
+        }
+
+        function handleBiyearlyTasks() {
+            sideBardOptionsClickHandler('#bt', 'Biyearly');
+        }
+
+        function handleYearlyTasks() {
+            sideBardOptionsClickHandler('#yt', 'Yearly');
+        }
+
+        function handleAllCurrentTasks() {
+            sideBardOptionsClickHandler('#ct', 'All');
+        }
+
+        async function saveAllTasks() {
+            document.querySelector("#loading-overlay p").textContent = "Updating data, Please wait...";
+            showLoading();
+            const anyIds = getSessionStorage('dataIdsForSaving');
+            if (anyIds == 'none') {
+                hideLoading();
+                confirm("There is no modified data for saving.")
+            } else {
+                const listOfIds = parseAndTrimIds(anyIds);
+                const dataToPass = await saveDataFiltering(DB_NAME, STORE_NAME_RESPONSES, listOfIds);
+                //console.log('data to pass===>'+ JSON.stringify(dataToPass));
+                google.script.run
+                    .withSuccessHandler((responseData) => {
+                        hideLoading();
+                        confirm(responseData.message);
+                        createAndUpdateSessionStorage('dataIdsForSaving', 'none');
+                    })
+                    .updateUserResponsesInSheet(dataToPass);
+            }
+            //hideLoading();
+        }
+
+        function parseAndTrimIds(csvString) {
+            return csvString
+                .split(',') // Split by comma
+                .map(id => id.trim()) // Trim whitespace from each ID
+                .filter(id => id); // Remove empty values (if any)
+        }
+
+        async function saveDataFiltering(dbName, storeName, idList) {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(dbName);
+
+                request.onsuccess = function(event) {
+                    const db = event.target.result;
+                    const transaction = db.transaction(storeName, "readonly");
+                    const store = transaction.objectStore(storeName);
+                    const result = [];
+
+                    let pending = idList.length;
+
+                    idList.forEach(id => {
+                        const getRequest = store.get(id);
+
+                        getRequest.onsuccess = function(event) {
+                            if (event.target.result) {
+                                result.push(event.target.result);
+                            }
+                            if (--pending === 0) {
+                                resolve(result); // Resolve when all IDs are processed
+                            }
+                        };
+
+                        getRequest.onerror = function() {
+                            //console.error("Error fetching ID:", id);
+                            if (--pending === 0) {
+                                resolve(result);
+                            }
+                        };
+                    });
+
+                    transaction.oncomplete = function() {
+                        db.close();
+                    };
+                };
+
+                request.onerror = function() {
+                    reject("Failed to open IndexedDB");
+                };
+            });
+        }
+
+        // Try to load cached requests into DB_DATA_REQUESTS from IndexedDB at startup
+        async function loadCachedRequestsFromIndexedDB() {
+            try {
+                const cached = await getDataFromIndexedDB(STORE_NAME_REQUESTS, "RequestId");
+                DB_DATA_REQUESTS = Array.isArray(cached) ? cached : [];
+                // if user is already on UserTasks, showRequestedTasks() will use this
+            } catch (e) {
+                DB_DATA_REQUESTS = [];
+                console.warn('No cached requests on startup', e);
+            }
+        }
+
+
+        // 1) Improved sideBardOptionsClickHandler: show cached requests immediately, then fetch server data
+        async function sideBardOptionsClickHandler(backgroundCode, clickedTask) {
+            applyBackgroundForClicked(backgroundCode);
+            createAndUpdateSessionStorage('selectionOnSideBar', clickedTask);
+
+            const requestedSection = document.getElementById('requestedTasksSection');
+
+            if (clickedTask === 'UserTasks') {
+                if (requestedSection) requestedSection.style.display = 'block';
+
+                document.getElementById('profileSection').style.display = "none";
+                document.getElementById('taskSection').style.display = "none";
+                document.getElementById('userTasksSection').style.display = 'block';
+
+                // 1) Show cached requests first (fast)
+                try {
+                    const cachedReqs = await getDataFromIndexedDB(STORE_NAME_REQUESTS, "RequestId");
+                    DB_DATA_REQUESTS = Array.isArray(cachedReqs) ? cachedReqs : [];
+                } catch (e) {
+                    DB_DATA_REQUESTS = [];
+                    console.warn('load cached requests failed', e);
+                }
+                showRequestedTasks();
+
+                // 2) Fast render: prefer in-memory DB_DATA_TASKS, else try IndexedDB
+                try {
+                    if (DB_DATA_TASKS && Object.keys(DB_DATA_TASKS).length) {
+                        const shaped = Object.entries(DB_DATA_TASKS).map(([key, val]) => ({
+                            taskId: key,
+                            goal: val.goal || val.Goal || '',
+                            frequency: val.frequency || val.Frequency || '',
+                            taskName: val.taskName || val.TaskName || val.task || '',
+                            keyResults: val.keyResult || val.keyResults || ''
+                        }));
+                        renderUserTasks(shaped);
+                        sessionStorage.setItem('userTasksLoaded', '1');
+                    } else {
+                        // try load from IndexedDB without blocking UI too long
+                        const found = await loadTasksFromIndexedDB();
+                        if (found) {
+                            const shaped = Object.entries(DB_DATA_TASKS).map(([key, val]) => ({
+                                taskId: key,
+                                goal: val.goal || val.Goal || '',
+                                frequency: val.frequency || val.Frequency || '',
+                                taskName: val.taskName || val.TaskName || val.task || '',
+                                keyResults: val.keyResult || val.keyResults || ''
+                            }));
+                            renderUserTasks(shaped);
+                            sessionStorage.setItem('userTasksLoaded', '1');
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[sideBardOptionsClickHandler] fast render failed', e);
+                }
+
+                // 3) Background refresh: if first time show loader while fetching canonical data;
+                //    otherwise refresh silently
+                const alreadyLoadedFlag = sessionStorage.getItem('userTasksLoaded');
+
+                if (!alreadyLoadedFlag) {
+                    showLoading();
+                    google.script.run
+                        .withSuccessHandler((tasks) => {
+                            try {
+                                renderUserTasks(tasks);
+                            } catch (e) {
+                                console.error(e);
+                            }
+                            sessionStorage.setItem('userTasksLoaded', '1');
+                            try {
+                                hideLoading();
+                            } catch (e) {}
+                        })
+                        .withFailureHandler(err => {
+                            console.error('getUserTasks failed', err);
+                            try {
+                                hideLoading();
+                            } catch (e) {}
+                            alert(err && err.message ? err.message : 'Failed to load user tasks.');
+                        })
+                        .getUserTasks();
+
+                    // Also refresh requests (server -> indexedDB -> UI)
+                    google.script.run.withSuccessHandler(handleMyRequestsFromServer).getMyRequests();
+
+                    // safety: ensure loader hidden after timeout
+                    setTimeout(() => {
+                        try {
+                            hideLoading();
+                        } catch (e) {}
+                    }, 8000);
+                } else {
+                    // Subsequent navigations: background refresh only
+                    google.script.run.withSuccessHandler(handleMyRequestsFromServer).getMyRequests();
+                    google.script.run
+                        .withSuccessHandler((tasks) => {
+                            try {
+                                renderUserTasks(tasks);
+                            } catch (e) {
+                                console.warn('renderUserTasks error', e);
+                            }
+                        })
+                        .withFailureHandler(err => {
+                            console.warn('Background getUserTasks failed', err);
+                        })
+                        .getUserTasks();
+                }
+
+                return;
+            }
+
+            // Non-UserTasks behaviour (unchanged)
+            if (requestedSection) requestedSection.style.display = 'none';
+
+            if (backgroundCode != '#p') {
+                document.getElementById('profileSection').style.display = "none";
+                document.getElementById('userTasksSection').style.display = 'none';
+                document.getElementById('taskSection').style.display = "block";
+                document.getElementById('taskFilter').value = "current";
+                if (clickedTask != 'All') {
+                    document.getElementById('taskFilter').disabled = false;
+                } else {
+                    document.getElementById('taskFilter').disabled = true;
+                }
+                populateTable();
+
+            } else {
+                document.getElementById('taskFilter').disabled = false;
+                showLoading();
+                document.getElementById('taskSection').style.display = "none";
+                document.getElementById('userTasksSection').style.display = 'none';
+                document.getElementById('profileSection').style.display = "block";
+                google.script.run.withSuccessHandler(populateProfileData).fetchUserDataForProfile();
+                hideLoading();
+            }
+        }
+        //.4  mohit
+        // Improved renderUserTasks — prefer cached DB_DATA_TASKS lookup for stable, instant UI
+        // REPLACE your renderUserTasks with this version
+        // Replace your existing renderUserTasks with this function (only small change: intercept checkbox click to open edit popup)
+        function renderUserTasks(tasks) {
+            try {
+                const tbody = document.querySelector('#userTasksTable tbody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+
+                const requestAccessBtn = document.getElementById('requestAccessBtn');
+                if (requestAccessBtn) requestAccessBtn.disabled = true;
+
+                // Normalize tasks -> if none provided, build from DB_DATA_TASKS map
+                let taskArray = [];
+                if (!tasks) {
+                    if (DB_DATA_TASKS && typeof DB_DATA_TASKS === 'object') {
+                        taskArray = Object.keys(DB_DATA_TASKS).map(key => {
+                            const v = DB_DATA_TASKS[key] || {};
+                            return {
+                                taskId: key,
+                                goal: v.goal || v.Goal || '',
+                                frequency: v.frequency || v.Frequency || '',
+                                taskName: v.taskName || v.TaskName || v.task || '',
+                                keyResults: v.keyResult || v.keyResults || ''
+                            };
+                        });
+                    } else {
+                        taskArray = [];
+                    }
+                } else if (Array.isArray(tasks)) {
+                    taskArray = tasks;
+                } else if (typeof tasks === 'object') {
+                    taskArray = Object.values(tasks);
+                }
+
+                if (taskArray.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6">No tasks assigned.</td></tr>';
+                    return;
+                }
+
+                // KEY CHANGE: only 'requested' should lock. 'approved' should NOT block editing.
+                const activeStatuses = new Set(['requested']);
+                let globalLock = false;
+                if (Array.isArray(DB_DATA_REQUESTS) && DB_DATA_REQUESTS.length) {
+                    for (const r of DB_DATA_REQUESTS) {
+                        try {
+                            const status = (r.Status || '').toString().trim().toLowerCase();
+                            if (activeStatuses.has(status)) {
+                                globalLock = true;
+                                break;
+                            }
+                        } catch (e) { /* ignore malformed rows */ }
+                    }
+                }
+
+                // Also compute per-task requested set (disable individually if needed) - only use requested
+                const requestedTaskSet = new Set();
+                if (Array.isArray(DB_DATA_REQUESTS) && DB_DATA_REQUESTS.length) {
+                    for (const req of DB_DATA_REQUESTS) {
+                        try {
+                            const status = (req.Status || '').toString().trim().toLowerCase();
+                            if (activeStatuses.has(status)) {
+                                const raw = (req.RequestTask || req.Tasks || '').toString();
+                                const taskIds = raw.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+                                for (const tid of taskIds) requestedTaskSet.add(tid);
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+
+                const frag = document.createDocumentFragment();
+
+                function safeCssEscape(val) {
+                    try {
+                        return CSS.escape(val);
+                    } catch (e) {
+                        return String(val).replace(/(["'\\])/g, '\\$1');
+                    }
+                }
+
+                for (const t of taskArray) {
+                    const taskId = (t && (t.taskId || t.TaskId || t.id || t.TaskID)) ? (t.taskId || t.TaskId || t.id || t.TaskID).toString() : '';
+                    const cachedTask = (DB_DATA_TASKS && DB_DATA_TASKS[taskId]) ? DB_DATA_TASKS[taskId] : null;
+                    const displayTaskName = (t && (t.taskName || t.TaskName || t['Task Name'])) || (cachedTask && (cachedTask.taskName || cachedTask.TaskName || cachedTask.task)) || '';
+                    const displayKeyResults = (t && (t.keyResults || t.keyResult || t['Key Results'])) || (cachedTask && (cachedTask.keyResult || cachedTask.keyResults)) || '';
+                    const displayFrequency = (t && (t.frequency || t.Frequency || t['Frequency'])) || (cachedTask && (cachedTask.frequency || cachedTask.Frequency)) || '';
+
+                    // If globalLock true => disable all. Otherwise disable if that task is in requestedTaskSet
+                    const isRequestedByAny = requestedTaskSet.has(taskId);
+                    const checkboxDisabled = globalLock || isRequestedByAny;
+
+                    const tr = document.createElement('tr');
+                    if (checkboxDisabled) tr.classList.add('disabled-row');
+
+                    tr.dataset.taskid = taskId;
+                    tr.innerHTML = `
+        <td><input type="checkbox" class="task-checkbox" value="${escapeHtml(taskId)}" ${checkboxDisabled ? 'disabled' : ''}></td>
+        <td>${escapeHtml(taskId)}</td>
+        <td>${escapeHtml((t && (t.goal || t.Goal)) || (cachedTask && (cachedTask.goal || cachedTask.Goal)) || '')}</td>
+        <td class="col-frequency">${escapeHtml(displayFrequency)}</td>
+        <td class="col-taskname">
+          <a href="#" class="task-edit-link" data-taskid="${escapeHtml(taskId)}">${escapeHtml(displayTaskName || '-')}</a>
+        </td>
+        <td class="col-keyresults">${escapeHtml(displayKeyResults)}</td>
+      `;
+
+                    tr.addEventListener('click', function(evt) {
+                        try {
+                            if (evt.target.closest('.task-checkbox') || evt.target.closest('.task-edit-link') ||
+                                evt.target.tagName === 'INPUT' || evt.target.tagName === 'A' ||
+                                evt.target.tagName === 'BUTTON' || evt.target.tagName === 'LABEL') {
+                                return;
+                            }
+
+                            if (checkboxDisabled) {
+                                alert('Editing is disabled for this task (it is requested).');
+                                return;
+                            }
+
+                            if (taskId) {
+                                if (typeof openUserTaskPopup === 'function') {
+                                    openUserTaskPopup(taskId);
+                                } else {
+                                    console.warn('openUserTaskPopup is not defined.');
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Row click handler error', e);
+                        }
+                    });
+
+                    frag.appendChild(tr);
+                }
+
+                tbody.appendChild(frag);
+
+                document.querySelectorAll('.task-edit-link').forEach(a => {
+                    a.addEventListener('click', function(evt) {
+                        evt.preventDefault();
+                        const tid = this.getAttribute('data-taskid');
+                        if (!tid) return;
+                        const cb = document.querySelector(`.task-checkbox[value="${safeCssEscape(tid)}"]`);
+                        if (cb && cb.disabled) {
+                            alert('Editing is disabled for this task (it is requested).');
+                            return;
+                        }
+                        if (typeof openUserTaskPopup === 'function') {
+                            openUserTaskPopup(tid);
+                        } else {
+                            console.warn('openUserTaskPopup is not defined. Implement it to open the edit popup for a task.');
+                        }
+                    });
+                });
+
+                const checkboxes = Array.from(document.querySelectorAll('.task-checkbox'));
+
+                function updateRequestButtonState() {
+                    if (!requestAccessBtn) return;
+                    if (globalLock) {
+                        requestAccessBtn.disabled = true;
+                        return;
+                    }
+                    const anyChecked = checkboxes.some(ch => !ch.disabled && ch.checked);
+                    requestAccessBtn.disabled = !anyChecked;
+                }
+
+                if (globalLock) {
+                    checkboxes.forEach(cb => {
+                        cb.checked = false;
+                        cb.disabled = true;
+                        const row = cb.closest('tr');
+                        if (row) {
+                            row.classList.remove('selected');
+                            row.classList.add('disabled-row');
+                        }
+                    });
+                }
+
+                updateRequestButtonState();
+
+                checkboxes.forEach(cb => {
+                    cb.addEventListener('click', (evt) => {
+                        try {
+                            if (cb.disabled) return;
+                            const tid = cb.value;
+                            const hasUiEdit = !!(typeof UI_TASK_EDITS !== 'undefined' && UI_TASK_EDITS && UI_TASK_EDITS[tid]);
+
+                            if (!hasUiEdit) {
+                                evt.preventDefault();
+                                evt.stopPropagation();
+                                cb.checked = false;
+                                const row = cb.closest('tr');
+                                if (row) row.classList.remove('selected');
+
+                                if (typeof openUserTaskPopup === 'function') {
+                                    openUserTaskPopup(tid);
+                                } else {
+                                    console.warn('openUserTaskPopup not defined; cannot open edit popup.');
+                                }
+
+                                updateRequestButtonState();
+                                return;
+                            }
+                        } catch (e) {
+                            console.warn('checkbox click handler error', e);
+                        }
+                    });
+
+                    cb.addEventListener('change', () => {
+                        const row = cb.closest('tr');
+                        if (cb.checked) row.classList.add('selected');
+                        else row.classList.remove('selected');
+                        updateRequestButtonState();
+                    });
+                });
+
+            } catch (e) {
+                console.error('renderUserTasks error:', e);
+            } finally {
+                try {
+                    hideLoading();
+                } catch (err) {}
+            }
+
+            function escapeHtml(str) {
+                if (str === null || str === undefined) return '';
+                return String(str)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            }
+        }
+
+
+
+
+        function populateProfileData(profileData) {
+            document.getElementById("profileName").textContent = profileData["User Name"];
+            document.getElementById("profileEmail").textContent = profileData["Email"];
+            document.getElementById("profileProfileName").textContent = profileData["ProfileName"];
+            document.getElementById("profileSchoolName").textContent = profileData["School"];
+            document.getElementById("profileWingName").textContent = profileData["Wing"];
+        }
+
+        function applyBackgroundForClicked(id) {
+            document.querySelectorAll('.sidebar a').forEach(item => item.classList.remove('clicked'));
+            // Add 'clicked' class to the clicked link
+            document.querySelector(id).classList.add('clicked');
+        }
+
+        //------------------handeling table data--------------------------
+
+        // Function to populate table based on selected taskFilter
+        async function populateTable() {
+            showLoading();
+            const taskFilter = document.getElementById('taskFilter').value;
+            const tableBody = document.querySelector('#taskTable tbody');
+
+            // Clear existing rows
+            tableBody.innerHTML = '';
+
+            const tasks = await handleDataToPopulateForCurrentInstance(taskFilter);
+
+            //console.log('task data in populate table==>'+ JSON.stringify(DB_DATA_TASKS));
+
+            // Populate the table with data
+            tasks.forEach(task => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                        <td>${task['ResponseId']}</td>
+                        <td>${task['Frequency']}</td>
+                        <td>${DB_DATA_TASKS[task["TaskId"]]["taskName"]}</td>
+                        <td>${DB_DATA_TASKS[task["TaskId"]]["keyResult"]}</td>
+                        <td>${task['Progress Status']}</td>
+                        <td>${new Date(task['Due Date']).toLocaleDateString("en-GB")}</td>
+                        <td>${task['Email Trigger']}</td>
+                    `;
+
+                row.addEventListener('click', () => openPopup(task));
+
+                tableBody.appendChild(row);
+            });
+            hideLoading();
+        }
+
+        async function handleDataToPopulateForCurrentInstance(taskFilter) {
+            const taskPeriodFilter = getSessionStorage('selectionOnSideBar');
+            let filter = {};
+            //console.log('taskPeriodFilter==>'+ taskPeriodFilter);
+            if (taskPeriodFilter != 'All') {
+                taskFilterValueToPass = getStatusValueBasedOnSelection(taskFilter);
+                filter['Frequency'] = taskPeriodFilter;
+                if (taskFilterValueToPass != 'All') {
+                    filter['Status'] = taskFilterValueToPass;
+                }
+            } else {
+                console.log('Status===> inside this method')
+                filter['Status'] = 'Active';
+            }
+
+
+            const filteredData = await filterResponseBasedOnSelection(DB_DATA_RESPONSES, filter);
+            //console.log('filtered data =======>' + filteredData);
+            return filteredData
+        }
+
+        function getStatusValueBasedOnSelection(taskFilter) {
+            const filterMap = {
+                current: "Active",
+                lastWeek: "Buffer",
+                all: "All"
+            };
+
+            return filterMap[taskFilter] || "Active";
+        }
+
+        function filterResponseBasedOnSelection(dataList, filters) {
+            //console.log('Data in filter func ==>', JSON.stringify(dataList, null, 2));
+            //console.log('Filters in filter func ==>', JSON.stringify(filters, null, 2));
+
+            return dataList.filter(row => {
+                return Object.entries(filters).every(([key, value]) => {
+                    if (!(key in row)) {
+                        //console.warn(`Key '${key}' not found in row:`, row);
+                        return false;
+                    }
+
+                    let rowValue = row[key];
+                    if (typeof rowValue === "string") rowValue = rowValue.trim().toLowerCase();
+                    if (typeof value === "string") value = value.trim().toLowerCase();
+
+                    const match = rowValue === value;
+                    if (!match) {
+                        //console.warn(`Mismatch -> Key: ${key}, Expected: ${value}, Found: ${rowValue}`);
+                    }
+
+                    return match;
+                });
+            });
+        }
+
+        // Show loading overlay
+        function showLoading() {
+            document.getElementById("loading-overlay").classList.remove("hidden");
+        }
+
+        // Hide loading overlay after data loads
+        function hideLoading() {
+            document.getElementById("loading-overlay").classList.add("hidden");
+        }
+
+        //---------------------------------- handling popup ------------------------------------------------------
+        // Function to open popup
+        function openPopup(task) {
+            document.getElementById("popup").style.display = "block";
+            document.getElementById("popup-overlay").style.display = "block";
+            document.body.style.overflow = "hidden"; // Disable scrolling in the background
+
+            document.getElementById('popupTaskId').value = task['ResponseId'];
+            document.getElementById('goal').value = DB_DATA_TASKS[task['TaskId']]["goal"];
+            document.getElementById('popupTaskName').value = DB_DATA_TASKS[task['TaskId']]["taskName"];
+            document.getElementById('keyResults').value = DB_DATA_TASKS[task['TaskId']]["keyResult"];
+            document.getElementById('popupProgressStatus').value = task['Progress Status'];
+            document.getElementById('popupRemarks').value = task['Remarks'];
+            document.getElementById('popupTaskEvidence').value = DB_DATA_TASKS[task['TaskId']]["taskEvidence"];
+            document.getElementById('popupEvidence').value = task['Evidence'];
+            document.getElementById('popupDueDate').value = new Date(task['Due Date']).toLocaleDateString("en-GB");
+            document.getElementById('popupEscalation').value = task['Email Trigger'];
+
+        }
+
+        // Function to close popup
+        function closePopup() {
+            document.getElementById('popup').style.display = 'none';
+            document.getElementById("popup").style.display = "none";
+            removePopupOverlay();
+        }
+
+        function removePopupOverlay() {
+            document.getElementById("popup-overlay").style.display = "none";
+            document.body.style.overflow = "auto"; // Enable scrolling again
+        }
+
+        // Function for Done button (Modify as needed)
+        async function onDone() {
+            const responseId = document.getElementById('popupTaskId').value;
+            const updatedStatus = document.getElementById('popupProgressStatus').value;
+            const updatedRemarks = document.getElementById('popupRemarks').value;
+            const updatedEvidence = document.getElementById('popupEvidence').value;
+
+            closePopup();
+
+            const updateStatus = await updateTaskFields(responseId, {
+                ["Progress Status"]: updatedStatus,
+                Remarks: updatedRemarks,
+                Evidence: updatedEvidence
+            }, STORE_NAME_RESPONSES, "ResponseId");
+
+            if (updatedStatus) {
+                const anyIds = getSessionStorage('dataIdsForSaving');
+                let dataIds = (anyIds == 'none') ? responseId : anyIds + ',' + responseId;
+                createAndUpdateSessionStorage('dataIdsForSaving', dataIds);
+
+                DB_DATA_RESPONSES = await getDataFromIndexedDB(STORE_NAME_RESPONSES, "ResponseId");
+                await populateTable();
+            }
+            removePopupOverlay();
+            //console.log("Updated Progress Status:", updatedStatus);
+
+        }
+
+
+        //---------------------------------- Database functions----------------------------------------------------
+
+        // Open IndexedDB
+        // async function openDB(storeName, indexKey) {
+        //   const request = indexedDB.open(DB_NAME, DB_VERSION);
+
+        //   return new Promise((resolve, reject) => {
+        //     request.onupgradeneeded = (event) => {
+        //       const db = event.target.result;
+        //       if (!db.objectStoreNames.contains(storeName)) {
+        //         db.createObjectStore(storeName, { keyPath: indexKey });
+        //       }
+        //     };
+        //     request.onsuccess = (event) => resolve(event.target.result);
+        //     request.onerror = (event) => reject(event.target.error);
+        //   });
+        // }
+
+        async function openDB(storeName, indexKey) {
+            return new Promise((resolve, reject) => {
+                let request = indexedDB.open(DB_NAME); // Open without a version to get the latest
+
+                request.onsuccess = async(event) => {
+                    let db = event.target.result;
+
+                    if (!db.objectStoreNames.contains(storeName)) {
+                        //console.log(`Store "${storeName}" not found. Upgrading database...`);
+                        db.close(); // Close the DB before reopening with a new version
+
+                        let newVersion = db.version + 1;
+                        let upgradeRequest = indexedDB.open(DB_NAME, newVersion);
+
+                        upgradeRequest.onupgradeneeded = (event) => {
+                            let upgradeDB = event.target.result;
+                            upgradeDB.createObjectStore(storeName, {
+                                keyPath: indexKey
+                            });
+                        };
+
+                        upgradeRequest.onsuccess = (event) => resolve(event.target.result);
+                        upgradeRequest.onerror = (event) => reject(upgradeRequest.error);
+                    } else {
+                        resolve(db);
+                    }
+                };
+
+                request.onerror = (event) => reject(request.error);
+            });
+        }
+
+
+        // Clear Old Data & Store New Data
+        async function updateDataInIndexedDB(data, storeName, indexKey) {
+            //console.log('update data in indexedDB ==>'+ JSON.stringify(data));
+            const db = await openDB(storeName, indexKey);
+            const tx = db.transaction(storeName, "readwrite");
+            //console.log('tx--------->'+ JSON.stringify(tx));
+            const store = tx.objectStore(storeName);
+            await store.clear(); // Remove old data
+
+
+            for (const item of data) {
+                await store.put(item); // Insert new data
+            }
+        }
+
+        // Fetch response Data from ServerSheet
+        async function handleResponseFetchDataFromServer(data) {
+            if (data) {
+                returnedData = JSON.parse(data);
+
+                if (returnedData.status == 'success') {
+                    await updateDataInIndexedDB(returnedData.data, STORE_NAME_RESPONSES, "ResponseId");
+                    //console.log("Data synced successfully!");
+                    DB_DATA_RESPONSES = await getDataFromIndexedDB(STORE_NAME_RESPONSES, "ResponseId");
+                    //console.log('DB data===>' + JSON.stringify(DB_DATA_RESPONSES));
+
+
+                    google.script.run.withSuccessHandler(loadDashboard).getDashboardHTML();
+                } else {
+                    showErrorForTheInitialScreen('Something went wrong. Please try again...');
+                }
+            }
+
+        }
+
+        //2. mohit 
+        // ---------- Ensure this exists BEFORE loadAndSyncData() is called ----------
+        async function handleTasksFetchDataFromServer(data) {
+            try {
+                const returnedData = (typeof data === 'string') ? JSON.parse(data) : data;
+                if (!returnedData) {
+                    console.warn('handleTasksFetchDataFromServer: no data');
+                    DB_DATA_TASKS = DB_DATA_TASKS || {};
+                    return;
+                }
+
+                if (returnedData.status && returnedData.status !== 'success') {
+                    console.warn('handleTasksFetchDataFromServer: server returned fail', returnedData);
+                    DB_DATA_TASKS = DB_DATA_TASKS || {};
+                    return;
+                }
+
+                const payload = (returnedData.data !== undefined) ? returnedData.data : returnedData;
+
+                // Build a map keyed by TaskId for fast runtime lookups
+                let map = {};
+                let arr = [];
+
+                if (Array.isArray(payload)) {
+                    payload.forEach(item => {
+                        if (!item) return;
+                        const key = (item.TaskId || item.taskId || item.TaskID || item.Id || item.id || '').toString();
+                        if (key) {
+                            map[key] = item;
+                            // ensure each item has TaskId (for storing in indexeddb)
+                            arr.push(Object.assign({}, item, {
+                                TaskId: key
+                            }));
+                        } else {
+                            // if no key, generate an id (fallback)
+                            const gen = ('TASK-' + Math.random().toString(36).slice(2, 9)).toUpperCase();
+                            map[gen] = item;
+                            arr.push(Object.assign({}, item, {
+                                TaskId: gen
+                            }));
+                        }
+                    });
+                } else if (payload && typeof payload === 'object') {
+                    // may already be an object keyed by TaskId
+                    Object.entries(payload).forEach(([k, v]) => {
+                        map[k] = v;
+                        arr.push(Object.assign({}, v, {
+                            TaskId: k
+                        }));
+                    });
+                }
+
+                DB_DATA_TASKS = map;
+
+                // persist full task list to IndexedDB (so client can read instantly later)
+                try {
+                    await updateDataInIndexedDB(arr, STORE_NAME_TASKS, "TaskId");
+                    // mark cached flag
+                    sessionStorage.setItem('tasksCached', '1');
+                } catch (e) {
+                    console.warn('Failed to write tasks to indexedDB', e);
+                }
+
+                console.log('handleTasksFetchDataFromServer: loaded tasks ->', Object.keys(DB_DATA_TASKS).length);
+            } catch (err) {
+                console.error('handleTasksFetchDataFromServer error:', err);
+                DB_DATA_TASKS = DB_DATA_TASKS || {};
+            }
+        }
+
+        //.3 
+        function fetchMyRequestsAndShow() {
+            showLoading();
+            google.script.run.withSuccessHandler(handleMyRequestsFromServer).getMyRequests();
+        }
+
+        async function handleMyRequestsFromServer(data) {
+            try {
+                const returned = (typeof data === 'string') ? JSON.parse(data) : data;
+                if (returned.status === 'success') {
+                    const serverList = Array.isArray(returned.data) ? returned.data : (returned.data ? [returned.data] : []);
+                    await updateDataInIndexedDB(serverList, STORE_NAME_REQUESTS, "RequestId");
+
+                    const allCached = await getDataFromIndexedDB(STORE_NAME_REQUESTS, "RequestId");
+                    DB_DATA_REQUESTS = Array.isArray(allCached) ? allCached : [];
+
+                    // KEEP ONLY requested / approved — drop inactive (completely)
+                    const visible = DB_DATA_REQUESTS.filter(r => {
+                        const status = (r && r.Status) ? ('' + r.Status).toString().trim().toLowerCase() : '';
+                        return status === 'requested' || status === 'approved';
+                    });
+
+                    showRequestedTasks(visible);
+
+                    try {
+                        renderUserTasks();
+                    } catch (err) {
+                        console.warn('renderUserTasks failed after requests refresh', err);
+                    }
+                } else {
+                    console.warn('getMyRequests fail', returned);
+                }
+            } catch (e) {
+                console.error('handleMyRequestsFromServer', e);
+            } finally {
+                hideLoading();
+            }
+        }
+
+
+
+
+
+
+
+        // Load Data & Sync with IndexedDB
+        async function loadAndSyncData() {
+            google.script.run.withSuccessHandler(handleTasksFetchDataFromServer).fetchUserTaskData();
+            google.script.run.withSuccessHandler(handleResponseFetchDataFromServer).fetchUsersResponseData();
+
+            // Requests - fetch and store in indexedDB
+            google.script.run.withSuccessHandler(handleMyRequestsFromServer).getMyRequests();
+
+        }
+
+        // Retrieve Data from IndexedDB
+        async function getDataFromIndexedDB(storeName, indexKey) {
+            const db = await openDB(storeName, indexKey);
+            const tx = db.transaction(storeName, "readonly");
+            const store = tx.objectStore(storeName);
+            const request = store.getAll();
+
+            return new Promise((resolve, reject) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        // update specific records
+        async function updateTaskFields(id, updates, storeName, indexKey) {
+            const db = await openDB(storeName, indexKey);
+            const transaction = db.transaction(storeName, "readwrite");
+            const store = transaction.objectStore(storeName);
+
+            const request = store.get(id);
+            const existingTask = await new Promise((resolve) => {
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => resolve(null);
+            });
+
+            if (!existingTask) {
+                console.error("Task not found");
+                return false; // Record not found, return false
+            }
+
+            // **Merge updates with existing data**
+            Object.assign(existingTask, updates);
+
+            const putRequest = store.put(existingTask);
+            return new Promise((resolve) => {
+                putRequest.onsuccess = () => resolve(true); // Successfully updated
+                putRequest.onerror = () => resolve(false); // Update failed
+            });
+        }
+
+        // 2) Optimistic requestAccess: add temp request to cache + UI immediately, call server, rollback on fail
+        // REPLACE requestAccess with this version
+        async function requestAccess() {
+            const selectedTasks = [];
+            document.querySelectorAll('.task-checkbox:checked').forEach(cb => {
+                const row = cb.closest('tr');
+                selectedTasks.push({
+                    taskId: row.cells[1].innerText.trim(),
+                    taskName: row.cells[4].innerText.trim(),
+                    keyResults: row.cells[5].innerText.trim()
+                });
+            });
+
+            if (selectedTasks.length === 0) {
+                alert('Please select at least one task.');
+                return;
+            }
+
+            // Build changes payload (Task 3)
+            const changesPayload = buildChangesPayload(); // { request: [...], tasks: "Task1, Task2" }
+
+            const taskIds = selectedTasks.map(t => t.taskId);
+            const csv = taskIds.join(',');
+            const currentUserId = (sessionStorage.getItem('currentUserId') || sessionStorage.getItem('userId') || '').toString();
+            const tmpId = 'TMP-' + Date.now();
+
+            // optimistic local request stores the JSON with old/new values in RequestTask
+            const tmpReq = {
+                RequestId: tmpId,
+                RequestTask: JSON.stringify(changesPayload), // store the JSON payload string in the sheet cell
+                Tasks: csv,
+                RequestFrom: currentUserId,
+                Status: 'Requested',
+                CreatedOn: new Date().toISOString()
+            };
+
+            try {
+                let existing = [];
+                try {
+                    existing = await getDataFromIndexedDB(STORE_NAME_REQUESTS, "RequestId");
+                } catch (e) {
+                    existing = [];
+                }
+                if (!Array.isArray(existing)) existing = [];
+
+                existing.push(tmpReq);
+                await updateDataInIndexedDB(existing, STORE_NAME_REQUESTS, "RequestId");
+                DB_DATA_REQUESTS = existing;
+
+                // IMPORTANT: re-render user tasks and small table immediately — this will enforce GLOBAL lock
+                renderUserTasks();
+                showRequestedTasks();
+
+                // clear selection and visually disable selected rows
+                document.querySelectorAll('.task-checkbox:checked').forEach(cb => {
+                    const row = cb.closest('tr');
+                    if (row) row.classList.add('disabled-row');
+                    cb.checked = false;
+                    cb.disabled = true;
+                    if (row) row.classList.remove('selected');
+                });
+
+                const btn = document.getElementById('requestAccessBtn');
+                if (btn) btn.disabled = true;
+            } catch (e) {
+                console.error('Optimistic update failed', e);
+                alert('Failed to add request locally. Try again.');
+                return;
+            }
+
+            // send to server — include both tasks array (for friendly email) and changes object (for storage)
+            showLoading();
+            google.script.run
+                .withSuccessHandler(async function(res) {
+                    hideLoading();
+                    if (res && (res.status === 'success' || res.status === 'ok')) {
+                        // canonical refresh
+                        fetchMyRequestsAndShow();
+                        google.script.run.withSuccessHandler(renderUserTasks).getUserTasks();
+                        alert(res.message || 'Request sent.');
+                    } else {
+                        await rollbackTempRequest(tmpId, taskIds);
+                        alert('Request failed: ' + (res && res.message ? res.message : 'Server error'));
+                    }
+                })
+                .withFailureHandler(async function(err) {
+                    hideLoading();
+                    console.error('sendAccessRequestEmail error', err);
+                    await rollbackTempRequest(tmpId, taskIds);
+                    alert('Request failed: ' + (err && err.message ? err.message : 'Network error'));
+                })
+                .sendAccessRequestEmail({
+                    tasks: selectedTasks,
+                    changes: changesPayload
+                });
+        }
+
+
+        function showRequestedTasks(visibleRequestsParam) {
+            const userTasksSection = document.getElementById('userTasksSection');
+            const section = document.getElementById("requestedTasksSection");
+            const tbody = document.querySelector("#requestedTasksTable tbody");
+            if (!section || !tbody) return;
+
+            // If userTasks view not visible, hide the small table and exit
+            if (!userTasksSection || userTasksSection.style.display === 'none') {
+                section.style.display = 'none';
+                try {
+                    renderUserTasks();
+                } catch (e) {}
+                return;
+            }
+
+            tbody.innerHTML = '';
+
+            let source = Array.isArray(visibleRequestsParam) ? visibleRequestsParam.slice() : (Array.isArray(DB_DATA_REQUESTS) ? DB_DATA_REQUESTS.slice() : []);
+
+            // Filter for current user if available
+            try {
+                const currentUserId = sessionStorage.getItem('currentUserId');
+                if (currentUserId) {
+                    source = source.filter(r => ('' + (r.RequestFrom || '')).toString().trim() === currentUserId);
+                }
+            } catch (e) { /* ignore */ }
+
+            // KEEP ONLY requested / approved; drop everything else (inactive removed)
+            source = source.filter(r => {
+                const status = (r && r.Status) ? ('' + r.Status).toString().trim().toLowerCase() : '';
+                return status === 'requested' || status === 'approved';
+            });
+
+            // If nothing to show, hide the section and recompute locks
+            if (!source || source.length === 0) {
+                section.style.display = "none";
+                try {
+                    renderUserTasks();
+                } catch (e) {}
+                return;
+            }
+
+            section.style.display = "block";
+
+            let anyApproved = false;
+            for (const req of source) {
+                let taskIdsArray = [];
+                try {
+                    const raw = (req.RequestTask || req.Tasks || '').toString().trim();
+                    if (raw && (raw.startsWith('{') || raw.startsWith('['))) {
+                        const parsed = JSON.parse(raw);
+                        if (parsed && parsed.tasks) {
+                            taskIdsArray = parsed.tasks.toString().split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+                        } else if (Array.isArray(parsed.request)) {
+                            parsed.request.forEach(obj => {
+                                const k = Object.keys(obj || {})[0];
+                                if (k) taskIdsArray.push(k);
+                            });
+                        }
+                    } else {
+                        taskIdsArray = (req.RequestTask || req.Tasks || '').toString().split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+                    }
+                } catch (e) {
+                    taskIdsArray = (req.RequestTask || req.Tasks || '').toString().split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+                }
+
+                const status = (req.Status || 'Requested').toString();
+                const statusLower = status.trim().toLowerCase();
+                if (statusLower === 'approved') anyApproved = true;
+
+                for (const taskId of taskIdsArray) {
+                    const tName = (DB_DATA_TASKS && DB_DATA_TASKS[taskId] && DB_DATA_TASKS[taskId].taskName) ? DB_DATA_TASKS[taskId].taskName : '-';
+                    const kRes = (DB_DATA_TASKS && DB_DATA_TASKS[taskId] && DB_DATA_TASKS[taskId].keyResult) ? DB_DATA_TASKS[taskId].keyResult : '-';
+                    tbody.insertAdjacentHTML('beforeend', `
+        <tr>
+          <td>${escapeHtml(taskId)}</td>
+          <td>${escapeHtml(tName)}</td>
+          <td>${escapeHtml(kRes)}</td>
+          <td>${escapeHtml(status)}</td>
+        </tr>
+      `);
+                }
+            }
+
+            const statusEl = document.getElementById('requestStatus');
+            if (statusEl) statusEl.innerText = `Status: ${anyApproved ? 'Approved' : 'Requested'}`;
+
+            function escapeHtml(str) {
+                if (str === null || str === undefined) return '';
+                return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+            }
+
+            try {
+                renderUserTasks();
+            } catch (e) { /* ignore */ }
+        }
+
+
+
+
+        // Called by the refresh button
+        function refreshRequestedTasks() {
+            // Clear UI task edits cache to prevent stale edit data
+            clearUiTaskEdits();
+
+            // Reset DB_DATA_TASKS to original state by reloading from IndexedDB
+            // This removes any in-memory modifications that were applied for UI display
+            loadTasksFromIndexedDB().then(() => {
+                // Fetch fresh request data from server
+                fetchMyRequestsAndShow();
+
+                // Re-render user tasks with clean data (no UI edits applied)
+                renderUserTasks();
+            }).catch(error => {
+                console.warn('Failed to reload tasks from IndexedDB during refresh:', error);
+                // Still proceed with request refresh even if task reload fails
+                fetchMyRequestsAndShow();
+                renderUserTasks();
+            });
+        }
+
+
+        //Mohit 6/7
+        // REPLACE rollbackTempRequest with this version
+        async function rollbackTempRequest(tempId, affectedTaskIds) {
+            try {
+                let existing = [];
+                try {
+                    existing = await getDataFromIndexedDB(STORE_NAME_REQUESTS, "RequestId");
+                } catch (e) {
+                    existing = [];
+                }
+                existing = (existing || []).filter(r => (r.RequestId || '') !== tempId);
+                await updateDataInIndexedDB(existing, STORE_NAME_REQUESTS, "RequestId");
+                DB_DATA_REQUESTS = Array.isArray(existing) ? existing : [];
+
+                // Re-render both lists (this recomputes global lock)
+                showRequestedTasks();
+                renderUserTasks();
+
+                // Re-enable related checkboxes only if they are not part of any remaining 'requested' request
+                for (const tid of(affectedTaskIds || [])) {
+                    const cb = document.querySelector(`.task-checkbox[value="${tid}"]`);
+                    if (cb) {
+                        let stillRequested = false;
+                        if (Array.isArray(DB_DATA_REQUESTS) && DB_DATA_REQUESTS.length) {
+                            const lockSet = new Set(['requested']);
+                            for (const req of DB_DATA_REQUESTS) {
+                                try {
+                                    const status = (req.Status || '').toString().trim().toLowerCase();
+                                    if (!lockSet.has(status)) continue;
+                                    const tasks = (req.RequestTask || req.Tasks || '').toString().split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+                                    if (tasks.includes(tid)) {
+                                        stillRequested = true;
+                                        break;
+                                    }
+                                } catch (e) { /* ignore */ }
+                            }
+                        }
+                        if (!stillRequested) {
+                            cb.disabled = false;
+                            cb.checked = false;
+                            const row = cb.closest('tr');
+                            if (row) row.classList.remove('disabled-row');
+                        }
+                    }
+                }
+
+                const requestAccessBtn = document.getElementById('requestAccessBtn');
+                if (requestAccessBtn) requestAccessBtn.disabled = true;
+                return true;
+            } catch (e) {
+                console.error('rollback error', e);
+                return false;
+            }
+        }
+
+        // 
+        // Read Tasks store from indexedDB and build DB_DATA_TASKS map
+        async function loadTasksFromIndexedDB() {
+            try {
+                const items = await getDataFromIndexedDB(STORE_NAME_TASKS, "TaskId");
+                if (!Array.isArray(items) || items.length === 0) {
+                    DB_DATA_TASKS = DB_DATA_TASKS || {};
+                    return false;
+                }
+                const map = {};
+                items.forEach(item => {
+                    const key = (item.TaskId || item.taskId || item.id || '').toString();
+                    if (key) map[key] = item;
+                });
+                DB_DATA_TASKS = map;
+                console.log('Loaded tasks from IndexedDB:', Object.keys(DB_DATA_TASKS).length);
+                return true;
+            } catch (e) {
+                console.warn('loadTasksFromIndexedDB failed', e);
+                DB_DATA_TASKS = DB_DATA_TASKS || {};
+                return false;
+            }
+        }
+
+        // user task PopUp
+        // ---- UI-only edits store (in-memory) ----
+        // structure: { TaskId: { taskName_old, taskName_new, key_old, key_new, freq_old, freq_new, evidence_old, evidence_new } }
+        const UI_TASK_EDITS = {};
+
+        // Open user task edit popup (call with a TaskId)
+        function openUserTaskPopup(taskId) {
+            try {
+                if (!taskId) return;
+                const task = (DB_DATA_TASKS && DB_DATA_TASKS[taskId]) ? DB_DATA_TASKS[taskId] : null;
+                if (!task) {
+                    alert('Task not available in cache.');
+                    return;
+                }
+
+                // Populate popup fields
+                document.getElementById('ut_taskId').value = taskId;
+                document.getElementById('ut_goal').value = task.goal || task.Goal || '';
+                const freq = (task.frequency || task.Frequency || '');
+                document.getElementById('ut_freq_old').value = freq;
+                // set new select to empty (default = keep same)
+                document.getElementById('ut_freq_new').value = '';
+
+                document.getElementById('ut_taskname_old').value = task.taskName || task.TaskName || task.task || '';
+                document.getElementById('ut_taskname_new').value = '';
+
+                document.getElementById('ut_key_old').value = task.keyResult || task.keyResults || '';
+                document.getElementById('ut_key_new').value = '';
+
+                document.getElementById('ut_evidence_old').value = task.taskEvidence || task.task_evidence || '';
+                document.getElementById('ut_evidence_new').value = '';
+
+                // show popup
+                document.getElementById('userTaskPopupOverlay').style.display = 'block';
+                document.getElementById('userTaskPopup').style.display = 'block';
+                document.body.style.overflow = 'hidden';
+            } catch (e) {
+                console.error('openUserTaskPopup', e);
+            }
+        }
+
+        function closeUserTaskPopup() {
+            document.getElementById('userTaskPopupOverlay').style.display = 'none';
+            document.getElementById('userTaskPopup').style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
+        // Save edits into UI (in-memory) and update rendered table cells (no DB writes).
+        function saveUserTaskEdit() {
+            try {
+                const taskId = document.getElementById('ut_taskId').value;
+                if (!taskId) return alert('No task selected.');
+
+                const oldTask = DB_DATA_TASKS[taskId] || {};
+                const old_taskName = oldTask.taskName || oldTask.TaskName || oldTask.task || '';
+                const old_key = oldTask.keyResult || oldTask.keyResults || '';
+                const old_freq = oldTask.frequency || oldTask.Frequency || '';
+                const old_evidence = oldTask.taskEvidence || oldTask.task_evidence || '';
+
+                const new_taskName = (document.getElementById('ut_taskname_new').value || '').trim();
+                const new_key = (document.getElementById('ut_key_new').value || '').trim();
+                const new_freq = (document.getElementById('ut_freq_new').value || '').trim();
+                const new_evidence = (document.getElementById('ut_evidence_new').value || '').trim();
+
+                // Build change record (only include fields that actually changed)
+                const change = {};
+                if (new_taskName) change.taskName_old = old_taskName, change.taskName_new = new_taskName;
+                if (new_key) change.keyResult_old = old_key, change.keyResult_new = new_key;
+                if (new_freq) change.frequency_old = old_freq, change.frequency_new = new_freq;
+                if (new_evidence) change.evidence_old = old_evidence, change.evidence_new = new_evidence;
+
+                if (Object.keys(change).length === 0) {
+                    // nothing changed -> close
+                    closeUserTaskPopup();
+                    return;
+                }
+
+                // Save to UI_TASK_EDITS map
+                UI_TASK_EDITS[taskId] = Object.assign({}, UI_TASK_EDITS[taskId] || {}, change);
+
+                // Apply changes to DB_DATA_TASKS (in-memory only) so the UI shows new values
+                if (!DB_DATA_TASKS[taskId]) DB_DATA_TASKS[taskId] = {};
+                if (change.taskName_new) DB_DATA_TASKS[taskId].taskName = change.taskName_new;
+                if (change.keyResult_new) DB_DATA_TASKS[taskId].keyResult = change.keyResult_new;
+                if (change.frequency_new) DB_DATA_TASKS[taskId].frequency = change.frequency_new;
+                if (change.evidence_new) DB_DATA_TASKS[taskId].taskEvidence = change.evidence_new;
+
+                // Update the specific table row (if visible)
+                const row = document.querySelector(`#userTasksTable tbody tr[data-taskid="${CSS.escape(taskId)}"]`);
+                if (row) {
+                    const fq = row.querySelector('.col-frequency');
+                    const tn = row.querySelector('.col-taskname');
+                    const kr = row.querySelector('.col-keyresults');
+                    if (fq && change.frequency_new) fq.textContent = change.frequency_new;
+                    if (tn && change.taskName_new) {
+                        // update anchor text if present, otherwise replace td text
+                        const anchor = tn.querySelector('.task-edit-link');
+                        if (anchor) anchor.textContent = change.taskName_new;
+                        else tn.textContent = change.taskName_new;
+                    }
+
+                    if (kr && change.keyResult_new) kr.textContent = change.keyResult_new;
+                }
+                // >>> TASK 2: ensure the edited task is checked so it will be included in the request
+                try {
+                    const cbForTask = document.querySelector(`.task-checkbox[value="${CSS.escape(taskId)}"]`);
+                    if (cbForTask) {
+                        cbForTask.checked = true;
+                        const rowForCheck = cbForTask.closest('tr');
+                        if (rowForCheck) rowForCheck.classList.add('selected');
+                        // enable the Request Access button
+                        const requestAccessBtn = document.getElementById('requestAccessBtn');
+                        if (requestAccessBtn) requestAccessBtn.disabled = false;
+                    }
+                } catch (e) {
+                    console.warn('Failed to auto-check edited task', e);
+                }
+
+                closeUserTaskPopup();
+                // Optionally show a toast / alert
+                // alert('Changes applied in UI. They are not saved to the server yet.');
+
+            } catch (e) {
+                console.error('saveUserTaskEdit', e);
+                alert('Failed to save UI changes.');
+            }
+        }
+
+        // Build JSON payload as client requested (only includes keyResult example, but we include all changed fields)
+        function buildChangesPayload() {
+            const requests = [];
+            const taskIds = [];
+
+            for (const tid in UI_TASK_EDITS) {
+                taskIds.push(tid);
+                const changes = UI_TASK_EDITS[tid] || {};
+
+                // Build object with explicit insertion order for properties
+                const inner = {};
+
+                // 1) Task name old/new (if present)
+                if (changes.taskName_old !== undefined) {
+                    inner.taskName_old = changes.taskName_old;
+                    inner.taskName_new = changes.taskName_new;
+                }
+
+                // 2) Key result old/new
+                if (changes.keyResult_old !== undefined) {
+                    inner.keyResult_old = changes.keyResult_old;
+                    inner.keyResult_new = changes.keyResult_new;
+                }
+
+                // 3) Frequency old/new
+                if (changes.frequency_old !== undefined) {
+                    inner.frequency_old = changes.frequency_old;
+                    inner.frequency_new = changes.frequency_new;
+                }
+
+                // 4) Evidence old/new
+                if (changes.evidence_old !== undefined) {
+                    inner.evidence_old = changes.evidence_old;
+                    inner.evidence_new = changes.evidence_new;
+                }
+
+                // Only include tid key if there is at least one property
+                const obj = {};
+                obj[tid] = inner;
+                requests.push(obj);
+            }
+
+            return {
+                request: requests,
+                tasks: taskIds.join(', ')
+            };
+        }
+
+
+        // Optional helper to clear temporary UI edits (if you need to reset)
+        function clearUiTaskEdits() {
+            // Clear the UI edits cache
+            for (const tid in UI_TASK_EDITS) {
+                delete UI_TASK_EDITS[tid];
+            }
+
+            // Reset DB_DATA_TASKS to original values by reloading from IndexedDB
+            // This removes any in-memory changes that were applied for UI display
+            if (typeof loadTasksFromIndexedDB === 'function') {
+                loadTasksFromIndexedDB().catch(error => {
+                    console.warn('Failed to reset task data during clearUiTaskEdits:', error);
+                });
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <div class="validation-container">
+        <div class="container">
+            <h1>Access Validation</h1>
+            <p id="message">Validating your access...</p>
+            <div class="loader" id="loader"></div>
+        </div>
+    </div>
+</body>
+
+</html>
