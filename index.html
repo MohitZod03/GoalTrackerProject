@@ -1002,7 +1002,7 @@
                     // KEEP ONLY requested / approved — drop inactive (completely)
                     const visible = DB_DATA_REQUESTS.filter(r => {
                         const status = (r && r.Status) ? ('' + r.Status).toString().trim().toLowerCase() : '';
-                        return status === 'requested' || status === 'approved';
+                        return status === 'requested' || status === 'approved' || status === 'rejected';
                     });
 
                     showRequestedTasks(visible);
@@ -1206,7 +1206,7 @@
             // KEEP ONLY requested / approved; drop everything else (inactive removed)
             source = source.filter(r => {
                 const status = (r && r.Status) ? ('' + r.Status).toString().trim().toLowerCase() : '';
-                return status === 'requested' || status === 'approved';
+                return status === 'requested' || status === 'approved' || status === 'rejected';
             });
 
             // If nothing to show, hide the section and recompute locks
@@ -1261,7 +1261,19 @@
             }
 
             const statusEl = document.getElementById('requestStatus');
-            if (statusEl) statusEl.innerText = `Status: ${anyApproved ? 'Approved' : 'Requested'}`;
+            let anyRejected = false;
+            for (const r of source) {
+                try {
+                    if ((r.Status || '').toString().trim().toLowerCase() === 'rejected') {
+                        anyRejected = true;
+                        break;
+                    }
+                } catch (e) {}
+            }
+            if (statusEl) {
+                const txt = anyApproved ? 'Approved' : (anyRejected ? 'Rejected' : 'Requested');
+                statusEl.innerText = `Status: ${txt}`;
+            }
 
             function escapeHtml(str) {
                 if (str === null || str === undefined) return '';
