@@ -170,7 +170,7 @@ function generateResponseRecords(databaseTables, frequency, notificationType, st
     const taskMap = createTaskMap(tasksData);
 
     // Filter responses
-    const filteredResponses = filterResponses(responseData, frequency, statusFilter, validStatus, schoolCondition, userList);
+    const filteredResponses = filterResponses(responseData, frequency, statusFilter, validStatus, schoolCondition, userList, taskMap, notificationType);
 
     // Update the Escalation or Reminder column for filtered tasks
     updateResponseRecords(responseSheetName, filteredResponses, notificationType);
@@ -204,22 +204,39 @@ function createUserMap(userData) {
 // Create a task map for efficient TaskId -> Task Name lookup
 function createTaskMap(tasksData) {
     return tasksData.reduce((map, task) => {
-        map[task.TaskId] = task["Task Name"] + ' ( ' + task['Key Results'] + ' )'; // Assuming 'Task Name' column exists
+        if (task && task.TaskId) map[task.TaskId] = task;
         return map;
     }, {});
 }
 
 // Optimized function using Set for faster lookup
-function filterResponses(responseData, frequency, statusFilter, validStatus, schoolCondition, userList) {
-    const userSet = new Set(userList); // Convert array to Set for O(1) lookups
+function filterResponses(responseData, frequency, statusFilter, validStatus, schoolCondition, userList, taskMap, notificationType) {
+    var userSet = new Set(userList || []);
+    var nt = (notificationType || '').toString().trim().toLowerCase();
+    var validLower = (validStatus || []).map(function(v) { return (v || '').toString().toLowerCase(); });
 
-    return responseData.filter(response =>
-        response.Status === statusFilter &&
-        response.Frequency === frequency &&
-        !validStatus.includes(response["Progress Status"] ? .toLowerCase()) &&
-        (!schoolCondition || userSet.has(response["Assigned To"])) // O(1) lookup
-    );
+    var out = [];
+    (responseData || []).forEach(function(response) {
+        if (!response) return;
+        if (_norm(response.Status) !== _norm(statusFilter)) return;
+        if (_norm(response.Frequency) !== _norm(frequency)) return;
+        var prog = _norm(response["Progress Status"]);
+        if (validLower.indexOf(prog) !== -1) return;
+        if (schoolCondition && !userSet.has((response["Assigned To"] || '').toString())) return;
+
+        var taskId = response["TaskId"];
+        var taskObj = (taskMap && taskMap[taskId]) ? taskMap[taskId] : null;
+        if (_taskDisablesTrigger(taskObj, nt)) {
+            console.log('Skipped response ' + (response.ResponseId || '') + ' because Task ' + (taskId || '') + ' disables "' + notificationType + '"');
+            return;
+        }
+
+        out.push(response);
+    });
+
+    return out;
 }
+
 
 function updateResponseRecords(responseSheetName, filteredResponses, notificationType) {
     const sheet = getSheetInstance(responseSheetName);
@@ -288,7 +305,7 @@ function groupTasksByUser(filteredResponses, taskMap) {
             };
         }
 
-        const taskName = taskMap[taskId];
+        const taskName = (taskMap && taskMap[taskId]) ? ((taskMap[taskId]["Task Name"] || '') + ' ( ' + (taskMap[taskId]['Key Results'] || '') + ' )') : undefined;
         if (taskName) {
             userTasksMap[userId].Tasks.push(taskName);
             userTasksMap[userId].ResponseIds.push(responseId);
@@ -495,7 +512,6 @@ function sendAccessRequestEmail(payload) {
             changesPayload = payload.changes || payload.request || null;
         }
 
-        // Try parse if changesPayload is a JSON string
         if (typeof changesPayload === 'string' && changesPayload) {
             try { changesPayload = JSON.parse(changesPayload); } catch (e) { /* leave as-is */ }
         }
@@ -518,7 +534,7 @@ function sendAccessRequestEmail(payload) {
             return { status: 'fail', message: 'Selected tasks not valid for this user.' };
         }
 
-        // Resolve supervisor
+        // Resolve supervisor list (can be emails or UserIds)
         var supField = userData['SupervisorIds'] || '';
         if (!supField && typeof fetchFilteredDataWithMap === 'function') {
             var rec = (fetchFilteredDataWithMap('Users', { Email: userData['Email'] }) || [])[0];
@@ -528,33 +544,63 @@ function sendAccessRequestEmail(payload) {
             return { status: 'fail', message: 'Supervisor not set.' };
         }
 
-        var first = supField.split(',').map(function(s) { return s.trim(); }).filter(Boolean)[0];
-        var supRecord = null;
-        if (first && first.indexOf('@') !== -1) {
-            supRecord = (typeof fetchFilteredDataWithMap === 'function') ?
-                (fetchFilteredDataWithMap('Users', { Email: first }) || [])[0] || { Email: first } :
-                { Email: first };
-        } else {
-            supRecord = (typeof fetchFilteredDataWithMap === 'function') ?
-                (fetchFilteredDataWithMap('Users', { UserId: first }) || [])[0] || null :
-                null;
-        }
-        if (!supRecord || !supRecord.Email || !supRecord.UserId) {
-            return { status: 'fail', message: 'Supervisor ID/email not resolved.' };
+        // Build array of supervisor identifiers (trim, filter empty)
+        var first = supField.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+        if (!first.length) return { status: 'fail', message: 'Supervisor list empty after parsing.' };
+
+        // Resolve each identifier to a user record when possible
+        var supRecords = [];
+        first.forEach(function(id) {
+            try {
+                var resolved = null;
+                if (id.indexOf('@') !== -1) {
+                    // looks like email
+                    resolved = (typeof fetchFilteredDataWithMap === 'function') ?
+                        (fetchFilteredDataWithMap('Users', { Email: id }) || [])[0] || { Email: id, UserId: id } :
+                        { Email: id, UserId: id };
+                } else {
+                    // probably a UserId
+                    resolved = (typeof fetchFilteredDataWithMap === 'function') ?
+                        (fetchFilteredDataWithMap('Users', { UserId: id }) || [])[0] || { UserId: id } :
+                        { UserId: id };
+                }
+                // ensure we at least have an Email or UserId
+                if (resolved) {
+                    // If resolved object lacks Email but id looked like an email, populate it
+                    if ((!resolved.Email || resolved.Email === '') && id.indexOf('@') !== -1) resolved.Email = id;
+                    // If resolved lacks UserId, set to email fallback
+                    if ((!resolved.UserId || resolved.UserId === '') && resolved.Email) resolved.UserId = resolved.Email;
+                    supRecords.push(resolved);
+                }
+            } catch (e) {
+                // ignore resolution error but keep fallback
+                supRecords.push({ Email: id, UserId: id });
+            }
+        });
+
+        if (!supRecords.length) {
+            return { status: 'fail', message: 'Supervisor ID/email(s) not resolved.' };
         }
 
-        var supEmail = supRecord.Email;
-        var supName = supRecord['User Name'] || supEmail.split('@')[0];
+        // Primary is first in hierarchy; rest are CC
+        var primary = supRecords[0];
+        var primaryEmail = primary.Email || '';
+        var primaryUserId = primary.UserId || primaryEmail || first[0];
+
+        // Build CC emails list from the rest (keep any raw emails/records)
+        var ccRecords = supRecords.slice(1);
+        var ccEmails = ccRecords.map(function(r) { return r.Email; }).filter(function(e) { return !!e; });
+
+        // Build list of requestToIds to save (comma-separated UserIds or fallback to emails)
+        var requestToIds = primary.UserId ? primary.UserId : '';
+        var supName = primary['User Name'] || (primaryEmail ? primaryEmail.split('@')[0] : primaryUserId);
         var userName = userData['User Name'] || userData['Email'];
         var subject = 'Request to Grant Edit Access — ' + userName;
 
-        // Helper: extract field-old/new pairs for a given taskId.
-        // Returns array of { field, oldVal, newVal }.
+        // Helper to extract field-old/new pairs for a given taskId.
         function extractChangesForTask(changes, taskId) {
             var out = [];
             if (!changes) return out;
-
-            // If changes is an array: [{ "TaskId00005": { "frequency_old":"..", "frequency_new":".." } }, ...]
             if (Array.isArray(changes)) {
                 changes.forEach(function(entry) {
                     if (entry && entry[taskId]) {
@@ -569,7 +615,6 @@ function sendAccessRequestEmail(payload) {
                                 if (/old$/i.test(k)) map[base].old = inner[k];
                                 if (/new$/i.test(k)) map[base].new = inner[k];
                             } else {
-                                // if keys do not follow _old/_new, treat as new value only
                                 map[k] = map[k] || { old: '', new: '' };
                                 map[k].new = inner[k];
                             }
@@ -581,10 +626,7 @@ function sendAccessRequestEmail(payload) {
                 });
                 return out;
             }
-
-            // If changes is an object mapping: { "TaskId00005": { ... } } or wrapper { request: [...] }
             if (typeof changes === 'object') {
-                // direct mapping
                 if (changes[taskId]) {
                     var inner2 = changes[taskId];
                     var map2 = {};
@@ -606,13 +648,9 @@ function sendAccessRequestEmail(payload) {
                     }
                     return out;
                 }
-
-                // wrapper shape: { request: [ { TaskId... } ] }
                 if (Array.isArray(changes.request)) {
                     return extractChangesForTask(changes.request, taskId);
                 }
-
-                // fallback: scan request-like keys
                 for (var k3 in changes) {
                     if (!changes.hasOwnProperty(k3)) continue;
                     try {
@@ -634,7 +672,6 @@ function sendAccessRequestEmail(payload) {
                     } catch (e) { /* ignore */ }
                 }
             }
-
             return out;
         }
 
@@ -643,7 +680,6 @@ function sendAccessRequestEmail(payload) {
         valid.forEach(function(task) {
             var id = (task.taskId || task.TaskId || '').toString();
             var ch = extractChangesForTask(changesPayload, id);
-            // include only if at least one old or new present
             var meaningful = ch.filter(function(x) { return (x.oldVal !== undefined && x.oldVal !== '') || (x.newVal !== undefined && x.newVal !== ''); });
             if (meaningful.length) tasksWithChanges.push({ id: id, changes: meaningful });
         });
@@ -694,24 +730,30 @@ function sendAccessRequestEmail(payload) {
 
         var bodyHtml = html.join('\n');
 
-        // Send email with both plain text and html
-        GmailApp.sendEmail(supEmail, subject, bodyText, { htmlBody: bodyHtml });
+        // Send email with primary as TO and rest as CC
+        if (!primaryEmail || primaryEmail === '') {
+            // If primary doesn't have an email, try to fallback to first identifier that looks like an email
+            var fallback = first.find(function(s) { return s.indexOf('@') !== -1; }) || primaryUserId;
+            primaryEmail = fallback;
+        }
+        GmailApp.sendEmail(primaryEmail, subject, bodyText, { htmlBody: bodyHtml, cc: ccEmails.join(',') });
 
-        // Save request JSON to sheet (stringify changesPayload if present)
+        // Save request JSON to sheet (stringify changesPayload if present) - requestTo will be comma-separated UserIds/emails
         var changesJsonString = '';
         try {
             changesJsonString = (changesPayload && typeof changesPayload !== 'string') ? JSON.stringify(changesPayload) : String(changesPayload || '');
         } catch (e) {
             changesJsonString = String(changesPayload || '');
         }
-        var saveStatus = saveAccessRequest(userData.UserId, supRecord.UserId, changesJsonString);
+        var saveStatus = saveAccessRequest(userData.UserId, requestToIds, changesJsonString);
 
+        var ccLog = ccEmails.length ? (' with CC to ' + ccEmails.join(', ')) : '';
         if (saveStatus && saveStatus.ok) {
-            return { status: 'success', message: 'Request sent to ' + supEmail + ' and saved (' + saveStatus.msg + ').', requestId: saveStatus.msg };
+            return { status: 'success', message: 'Request sent to ' + primaryEmail + ccLog + ' and saved (' + saveStatus.msg + ').', requestId: saveStatus.msg };
         } else if (saveStatus && !saveStatus.ok) {
-            return { status: 'success', message: 'Email sent to ' + supEmail + ' but saving request failed: ' + saveStatus.msg };
+            return { status: 'success', message: 'Email sent to ' + primaryEmail + ccLog + ' but saving request failed: ' + saveStatus.msg };
         } else {
-            return { status: 'success', message: 'Request sent to ' + supEmail + '.' };
+            return { status: 'success', message: 'Request sent to ' + primaryEmail + ccLog + '.' };
         }
 
     } catch (e) {
@@ -719,7 +761,6 @@ function sendAccessRequestEmail(payload) {
         return { status: 'fail', message: 'Error sending email: ' + (e.message || e) };
     }
 }
-
 // safe escape helper for HTML
 function escapeHtmlForHtml(str) {
     if (str === null || str === undefined) return '';
@@ -738,101 +779,160 @@ function saveAccessRequest(requestFromId, requestToId, requestTask) {
         var sheetName = 'Request';
         var reqSheet = ss.getSheetByName(sheetName);
 
-        // Desired minimal headers (used only when creating sheet)
+        // Minimal required headers
         var baseHeaders = ['RequestId', 'RequestFrom', 'RequestTo', 'RequestTask', 'Status', 'DataChanged'];
 
+        // Create sheet with base headers if missing
         if (!reqSheet) {
-            // create sheet with minimal headers
             reqSheet = ss.insertSheet(sheetName);
             reqSheet.getRange(1, 1, 1, baseHeaders.length).setValues([baseHeaders]);
-        } else {
-            // Read current header row (read enough columns to include current last column)
-            var lastCol = Math.max(1, reqSheet.getLastColumn());
-            var headers = reqSheet.getRange(1, 1, 1, lastCol).getValues()[0] || [];
-
-            // Helper to find header index case-insensitive
-            function findIndexCaseInsensitive(arr, name) {
-                name = (name || '').toString().trim().toLowerCase();
-                for (var i = 0; i < arr.length; i++) {
-                    if ((arr[i] || '').toString().trim().toLowerCase() === name) return i;
-                }
-                return -1;
-            }
-
-            // 1) Remove Deadline column if present
-            var deadlineIdx = findIndexCaseInsensitive(headers, 'deadline');
-            if (deadlineIdx !== -1) {
-                // deleteColumn uses 1-based indexes
-                reqSheet.deleteColumn(deadlineIdx + 1);
-                // Refresh header array after deletion
-                lastCol = Math.max(1, reqSheet.getLastColumn());
-                headers = reqSheet.getRange(1, 1, 1, lastCol).getValues()[0] || [];
-            }
-
-            // 2) Ensure DataChanged exists - if not, insert after Status if possible, otherwise append at end
-            var dataChangedIdx = findIndexCaseInsensitive(headers, 'datachanged') !== -1 ? findIndexCaseInsensitive(headers, 'datachanged') : -1;
-            if (dataChangedIdx === -1) {
-                var statusIdx = findIndexCaseInsensitive(headers, 'status');
-                if (statusIdx !== -1) {
-                    // insert a column after Status
-                    reqSheet.insertColumnAfter(statusIdx + 1); // using 1-based
-                    reqSheet.getRange(1, statusIdx + 2).setValue('DataChanged');
-                    // no need to shift other data manually (Sheets handles it)
-                } else {
-                    // append at the end
-                    reqSheet.insertColumnAfter(reqSheet.getLastColumn());
-                    reqSheet.getRange(1, reqSheet.getLastColumn()).setValue('DataChanged');
-                }
-            }
         }
 
-        // Re-read headers and mapping before append
+        // Read headers and build map
         var finalLastCol = Math.max(1, reqSheet.getLastColumn());
         var finalHeaders = reqSheet.getRange(1, 1, 1, finalLastCol).getValues()[0] || [];
-
-        // build header -> index map
         var headerMap = {};
         for (var i = 0; i < finalHeaders.length; i++) {
             var key = (finalHeaders[i] || '').toString().trim();
             if (key) headerMap[key.toLowerCase()] = i;
         }
 
-        // Prepare row array with the same length as header row
-        var rowArr = new Array(finalHeaders.length).fill('');
-
-        // Create request id and values
-        var requestId = 'REQ-' + (new Date()).getTime() + '-' + Math.floor(Math.random() * 9000 + 1000);
-        var statusValue = 'Requested';
-        var dataChangedValue = 'No';
-
-        // Ensure requestTask is string (stringify if object)
-        var requestTaskValue = requestTask;
-        if (requestTaskValue !== null && requestTaskValue !== undefined && typeof requestTaskValue !== 'string') {
-            try { requestTaskValue = JSON.stringify(requestTaskValue); } catch (e) { requestTaskValue = String(requestTaskValue); }
+        // Ensure DataChanged header exists (append it if not)
+        if (headerMap['datachanged'] === undefined) {
+            reqSheet.insertColumnAfter(reqSheet.getLastColumn());
+            reqSheet.getRange(1, reqSheet.getLastColumn()).setValue('DataChanged');
+            // refresh headers and map
+            finalLastCol = Math.max(1, reqSheet.getLastColumn());
+            finalHeaders = reqSheet.getRange(1, 1, 1, finalLastCol).getValues()[0] || [];
+            headerMap = {};
+            for (var i = 0; i < finalHeaders.length; i++) {
+                var k = (finalHeaders[i] || '').toString().trim();
+                if (k) headerMap[k.toLowerCase()] = i;
+            }
         }
 
-        // Put values into their header columns if present
-        if (headerMap['requestid'] !== undefined) rowArr[headerMap['requestid']] = requestId;
-        else rowArr[0] = requestId; // fallback to first column
+        // Normalize requestTask into JS object/array/string
+        var parsed = null;
+        var wasString = false;
+        if (requestTask === undefined || requestTask === null) {
+            parsed = null;
+        } else if (typeof requestTask === 'string') {
+            wasString = true;
+            try { parsed = JSON.parse(requestTask); } catch (e) { parsed = requestTask; }
+        } else {
+            parsed = requestTask;
+        }
 
-        if (headerMap['requestfrom'] !== undefined) rowArr[headerMap['requestfrom']] = requestFromId;
-        if (headerMap['requestto'] !== undefined) rowArr[headerMap['requestto']] = requestToId;
-        if (headerMap['requesttask'] !== undefined) rowArr[headerMap['requesttask']] = requestTaskValue;
-        if (headerMap['status'] !== undefined) rowArr[headerMap['status']] = statusValue;
-        if (headerMap['datachanged'] !== undefined) rowArr[headerMap['datachanged']] = dataChangedValue;
+        // Helpers
+        function isArrayOfTaskEntries(x) {
+            return Array.isArray(x) && x.length > 0 && x.every(function(el) { return el && typeof el === 'object' && Object.keys(el).length === 1; });
+        }
+
+        function makePerTaskObj(taskId, innerObj) {
+            var out = { tasks: taskId, request: [] };
+            var wrapper = {};
+            wrapper[taskId] = innerObj || {};
+            out.request.push(wrapper);
+            return out;
+        }
+
+        // Build list of per-task payloads to save (one element => one row)
+        var tasksToSave = [];
+
+        // Case 1: object with request array of single-task objects [{TaskId: {...}}...]
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.request) && isArrayOfTaskEntries(parsed.request)) {
+            parsed.request.forEach(function(entry) {
+                var tid = Object.keys(entry)[0];
+                tasksToSave.push(makePerTaskObj(tid, entry[tid] || {}));
+            });
+        }
+        // Case 2: an array directly like [{TaskId: {...}}, ...]
+        else if (isArrayOfTaskEntries(parsed)) {
+            parsed.forEach(function(entry) {
+                var tid2 = Object.keys(entry)[0];
+                tasksToSave.push(makePerTaskObj(tid2, entry[tid2] || {}));
+            });
+        }
+        // Case 3: object mapping { "TaskId00005": {...}, "TaskId00008": {...} }
+        else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            var keys = Object.keys(parsed);
+            // if looks like multi-task mapping, split; otherwise keep as single row
+            var looksLikeMulti = keys.length > 1 && keys.every(function(k) { return /^TaskId/i.test(k) || k.indexOf('Task') !== -1; });
+            if (looksLikeMulti) {
+                keys.forEach(function(k) {
+                    tasksToSave.push(makePerTaskObj(k, parsed[k]));
+                });
+            } else {
+                tasksToSave.push(parsed);
+            }
+        }
+        // Case 4: fallback for string or other shapes => save single row preserving original value
         else {
-            // if somehow DataChanged header is missing (shouldn't after ensure step), append at end
-            rowArr.push(dataChangedValue);
+            tasksToSave.push(parsed === null ? (requestTask || '') : parsed);
         }
 
-        // Append new row
-        reqSheet.appendRow(rowArr);
+        if (!tasksToSave || tasksToSave.length === 0) tasksToSave = [requestTask || ''];
 
-        status.msg = requestId;
+        // Append one row per task object
+        var createdIds = [];
+        for (var idx = 0; idx < tasksToSave.length; idx++) {
+            var single = tasksToSave[idx];
+
+            // Prepare row with same number of columns as header
+            var rowArr = new Array(finalHeaders.length).fill('');
+
+            var requestId = 'REQ-' + (new Date()).getTime() + '-' + Math.floor(Math.random() * 9000 + 1000);
+            var statusValue = 'Requested';
+            var dataChangedValue = 'No';
+
+            var requestTaskValue = single;
+            if (requestTaskValue !== null && requestTaskValue !== undefined && typeof requestTaskValue !== 'string') {
+                try { requestTaskValue = JSON.stringify(requestTaskValue); } catch (e) { requestTaskValue = String(requestTaskValue); }
+            }
+
+            if (headerMap['requestid'] !== undefined) rowArr[headerMap['requestid']] = requestId;
+            else rowArr[0] = requestId;
+
+            if (headerMap['requestfrom'] !== undefined) rowArr[headerMap['requestfrom']] = requestFromId;
+            if (headerMap['requestto'] !== undefined) rowArr[headerMap['requestto']] = requestToId;
+            if (headerMap['requesttask'] !== undefined) rowArr[headerMap['requesttask']] = requestTaskValue;
+            if (headerMap['status'] !== undefined) rowArr[headerMap['status']] = statusValue;
+            if (headerMap['datachanged'] !== undefined) rowArr[headerMap['datachanged']] = dataChangedValue;
+
+            reqSheet.appendRow(rowArr);
+            createdIds.push(requestId);
+            // allow tiny gap so timestamp changes if fast loop (not essential but makes ids more unique)
+            Utilities.sleep(6);
+        }
+
+        status.ok = true;
+        status.msg = createdIds.join(',');
     } catch (err) {
         console.error('Failed to write Request sheet:', err);
         status.ok = false;
         status.msg = String(err);
     }
     return status;
+}
+
+// Add these near the top-level of the file
+
+function _norm(v) {
+    return (v === undefined || v === null) ? '' : v.toString().trim().toLowerCase();
+}
+
+function _taskDisablesTrigger(taskObj, ntToken) {
+    if (!taskObj) return false;
+    var raw = (taskObj['Disable Trigger'] ? ? taskObj['DisableTrigger'] ? ? taskObj['Disable_Trigger'] ? ? '').toString().trim();
+    if (!raw) return false;
+    var low = raw.toLowerCase();
+    if (['true', '1', 'yes', 'y', 't'].indexOf(low) !== -1) return true; // disables all
+    var parts = raw.split(/[,;]+/).map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
+    if (parts.length === 0) return false;
+    var normalizeToken = function(s) { return s.replace(/[^a-z0-9]/gi, '').toLowerCase(); };
+    var nTok = normalizeToken(ntToken || '');
+    for (var i = 0; i < parts.length; i++) {
+        if (normalizeToken(parts[i]) === nTok || parts[i] === (ntToken || '').toLowerCase()) return true;
+    }
+    return false;
 }

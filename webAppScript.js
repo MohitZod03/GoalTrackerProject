@@ -3,7 +3,9 @@ function testabc() {
     console.log('data==>' + JSON.stringify(data));
 }
 //------------------------------ Allowed Domains List ----------------------------------------
-const allowedDomains = ['dpsnashik.in', 'dpsnagpurcity.com', 'dpsvaranasi.com', 'dpshinjawadi.com']; // Allowed domains
+const allowedDomains = ['dpsnashik.in', 'dpsnagpurcity.com',
+    'dpsvaranasi.com', 'dpshinjawadi.com', 'gmail.com'
+]; // Allowed domains
 
 //------------------------------ index.html controllers ----------------------------------------
 function doGet() {
@@ -27,7 +29,7 @@ function checkUserAccess() {
                 message: `Access denied. Your domain (${userDomain}) is not authorized.`,
             };
         }
-        ``
+
         const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users');
         if (!sheet) {
             return { status: 'error', message: 'Something went wrong.' };
