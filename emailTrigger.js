@@ -170,7 +170,7 @@ function generateResponseRecords(databaseTables, frequency, notificationType, st
     const taskMap = createTaskMap(tasksData);
 
     // Filter responses
-    const filteredResponses = filterResponses(responseData, frequency, statusFilter, validStatus, schoolCondition, userList);
+    const filteredResponses = filterResponses(responseData, frequency, statusFilter, validStatus, schoolCondition, userList, taskMap, notificationType);
 
     // Update the Escalation or Reminder column for filtered tasks
     updateResponseRecords(responseSheetName, filteredResponses, notificationType);
@@ -204,22 +204,39 @@ function createUserMap(userData) {
 // Create a task map for efficient TaskId -> Task Name lookup
 function createTaskMap(tasksData) {
     return tasksData.reduce((map, task) => {
-        map[task.TaskId] = task["Task Name"] + ' ( ' + task['Key Results'] + ' )'; // Assuming 'Task Name' column exists
+        if (task && task.TaskId) map[task.TaskId] = task;
         return map;
     }, {});
 }
 
 // Optimized function using Set for faster lookup
-function filterResponses(responseData, frequency, statusFilter, validStatus, schoolCondition, userList) {
-    const userSet = new Set(userList); // Convert array to Set for O(1) lookups
+function filterResponses(responseData, frequency, statusFilter, validStatus, schoolCondition, userList, taskMap, notificationType) {
+    var userSet = new Set(userList || []);
+    var nt = (notificationType || '').toString().trim().toLowerCase();
+    var validLower = (validStatus || []).map(function(v) { return (v || '').toString().toLowerCase(); });
 
-    return responseData.filter(response =>
-        response.Status === statusFilter &&
-        response.Frequency === frequency &&
-        !validStatus.includes(response["Progress Status"] ? .toLowerCase()) &&
-        (!schoolCondition || userSet.has(response["Assigned To"])) // O(1) lookup
-    );
+    var out = [];
+    (responseData || []).forEach(function(response) {
+        if (!response) return;
+        if (_norm(response.Status) !== _norm(statusFilter)) return;
+        if (_norm(response.Frequency) !== _norm(frequency)) return;
+        var prog = _norm(response["Progress Status"]);
+        if (validLower.indexOf(prog) !== -1) return;
+        if (schoolCondition && !userSet.has((response["Assigned To"] || '').toString())) return;
+
+        var taskId = response["TaskId"];
+        var taskObj = (taskMap && taskMap[taskId]) ? taskMap[taskId] : null;
+        if (_taskDisablesTrigger(taskObj, nt)) {
+            console.log('Skipped response ' + (response.ResponseId || '') + ' because Task ' + (taskId || '') + ' disables "' + notificationType + '"');
+            return;
+        }
+
+        out.push(response);
+    });
+
+    return out;
 }
+
 
 function updateResponseRecords(responseSheetName, filteredResponses, notificationType) {
     const sheet = getSheetInstance(responseSheetName);
@@ -288,7 +305,7 @@ function groupTasksByUser(filteredResponses, taskMap) {
             };
         }
 
-        const taskName = taskMap[taskId];
+        const taskName = (taskMap && taskMap[taskId]) ? ((taskMap[taskId]["Task Name"] || '') + ' ( ' + (taskMap[taskId]['Key Results'] || '') + ' )') : undefined;
         if (taskName) {
             userTasksMap[userId].Tasks.push(taskName);
             userTasksMap[userId].ResponseIds.push(responseId);
@@ -896,4 +913,26 @@ function saveAccessRequest(requestFromId, requestToId, requestTask) {
         status.msg = String(err);
     }
     return status;
+}
+
+// Add these near the top-level of the file
+
+function _norm(v) {
+    return (v === undefined || v === null) ? '' : v.toString().trim().toLowerCase();
+}
+
+function _taskDisablesTrigger(taskObj, ntToken) {
+    if (!taskObj) return false;
+    var raw = (taskObj['Disable Trigger'] ? ? taskObj['DisableTrigger'] ? ? taskObj['Disable_Trigger'] ? ? '').toString().trim();
+    if (!raw) return false;
+    var low = raw.toLowerCase();
+    if (['true', '1', 'yes', 'y', 't'].indexOf(low) !== -1) return true; // disables all
+    var parts = raw.split(/[,;]+/).map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
+    if (parts.length === 0) return false;
+    var normalizeToken = function(s) { return s.replace(/[^a-z0-9]/gi, '').toLowerCase(); };
+    var nTok = normalizeToken(ntToken || '');
+    for (var i = 0; i < parts.length; i++) {
+        if (normalizeToken(parts[i]) === nTok || parts[i] === (ntToken || '').toLowerCase()) return true;
+    }
+    return false;
 }

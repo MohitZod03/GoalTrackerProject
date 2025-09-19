@@ -106,11 +106,22 @@ function createResponses(tasks, users) {
         throw new Error("Invalid input. Tasks, Profiles, and Users must be arrays of objects.");
     }
 
+    // --- NEW: filter out tasks that have Disable Creation set to a truthy value ---
+    const allowedTasks = tasks.filter(t => {
+        if (!t) return false;
+        const raw = (t['Disable Creation'] ? ? t['DisableCreation'] ? ? t['Disable_Creation'] ? ? t['disable_creation'] ? ? '').toString().trim().toLowerCase();
+        const isDisabled = raw === 'true' || raw === '1' || raw === 'yes' || raw === 'y' || raw === 't';
+        if (isDisabled) {
+            console.log('Skipping task due to Disable Creation:', t.TaskId || t.TaskId || '(no TaskId)');
+        }
+        return !isDisabled;
+    });
+
     let responses = []; // Array to store the generated response records
     let responseCounter = 1; // Counter to generate unique ResponseId
 
-    // Iterate over the tasks
-    tasks.forEach(task => {
+    // Iterate over the allowed tasks (not the original list)
+    allowedTasks.forEach(task => {
         let profileId = task.ProfileId; // Get the ProfileId from the task
 
         // Find all users associated with this ProfileId
