@@ -1404,22 +1404,44 @@
                     return;
                 }
 
-                // Populate popup fields
+                // If there are existing UI edits for this task, prefer showing them:
+                const edits = (typeof UI_TASK_EDITS !== 'undefined' && UI_TASK_EDITS && UI_TASK_EDITS[taskId]) ? UI_TASK_EDITS[taskId] : {};
+
                 document.getElementById('ut_taskId').value = taskId;
                 document.getElementById('ut_goal').value = task.goal || task.Goal || '';
-                const freq = (task.frequency || task.Frequency || '');
-                document.getElementById('ut_freq_old').value = freq;
-                // set new select to empty (default = keep same)
-                document.getElementById('ut_freq_new').value = '';
 
-                document.getElementById('ut_taskname_old').value = task.taskName || task.TaskName || task.task || '';
-                document.getElementById('ut_taskname_new').value = '';
+                // Frequency: show original-old if present, otherwise task.frequency
+                const freqOld = (edits.frequency_old !== undefined && edits.frequency_old !== null && edits.frequency_old !== '') ?
+                    edits.frequency_old :
+                    (task.frequency || task.Frequency || '');
+                const freqNew = (edits.frequency_new !== undefined) ? edits.frequency_new : '';
 
-                document.getElementById('ut_key_old').value = task.keyResult || task.keyResults || '';
-                document.getElementById('ut_key_new').value = '';
+                document.getElementById('ut_freq_old').value = freqOld;
+                document.getElementById('ut_freq_new').value = freqNew;
 
-                document.getElementById('ut_evidence_old').value = task.taskEvidence || task.task_evidence || '';
-                document.getElementById('ut_evidence_new').value = '';
+                // Task name
+                const tnOld = (edits.taskName_old !== undefined && edits.taskName_old !== null && edits.taskName_old !== '') ?
+                    edits.taskName_old :
+                    (task.taskName || task.TaskName || task.task || '');
+                const tnNew = (edits.taskName_new !== undefined) ? edits.taskName_new : '';
+                document.getElementById('ut_taskname_old').value = tnOld;
+                document.getElementById('ut_taskname_new').value = tnNew;
+
+                // Key result
+                const keyOld = (edits.keyResult_old !== undefined && edits.keyResult_old !== null && edits.keyResult_old !== '') ?
+                    edits.keyResult_old :
+                    (task.keyResult || task.keyResults || '');
+                const keyNew = (edits.keyResult_new !== undefined) ? edits.keyResult_new : '';
+                document.getElementById('ut_key_old').value = keyOld;
+                document.getElementById('ut_key_new').value = keyNew;
+
+                // Evidence
+                const evOld = (edits.evidence_old !== undefined && edits.evidence_old !== null && edits.evidence_old !== '') ?
+                    edits.evidence_old :
+                    (task.taskEvidence || task.task_evidence || '');
+                const evNew = (edits.evidence_new !== undefined) ? edits.evidence_new : '';
+                document.getElementById('ut_evidence_old').value = evOld;
+                document.getElementById('ut_evidence_new').value = evNew;
 
                 // show popup
                 document.getElementById('userTaskPopupOverlay').style.display = 'block';
@@ -1429,6 +1451,7 @@
                 console.error('openUserTaskPopup', e);
             }
         }
+
 
         function closeUserTaskPopup() {
             document.getElementById('userTaskPopupOverlay').style.display = 'none';
@@ -1453,12 +1476,28 @@
                 const new_freq = (document.getElementById('ut_freq_new').value || '').trim();
                 const new_evidence = (document.getElementById('ut_evidence_new').value || '').trim();
 
-                // Build change record (only include fields that actually changed)
+                // preserve any previously stored old-values (so original-old is kept)
+                const existingEdits = (UI_TASK_EDITS && UI_TASK_EDITS[taskId]) ? UI_TASK_EDITS[taskId] : {};
+
                 const change = {};
-                if (new_taskName) change.taskName_old = old_taskName, change.taskName_new = new_taskName;
-                if (new_key) change.keyResult_old = old_key, change.keyResult_new = new_key;
-                if (new_freq) change.frequency_old = old_freq, change.frequency_new = new_freq;
-                if (new_evidence) change.evidence_old = old_evidence, change.evidence_new = new_evidence;
+
+                // For each field: if there's a new value, set old from either existingEdits.*_old (if present) or the current DB value.
+                if (new_taskName) {
+                    change.taskName_old = (existingEdits.taskName_old !== undefined) ? existingEdits.taskName_old : old_taskName;
+                    change.taskName_new = new_taskName;
+                }
+                if (new_key) {
+                    change.keyResult_old = (existingEdits.keyResult_old !== undefined) ? existingEdits.keyResult_old : old_key;
+                    change.keyResult_new = new_key;
+                }
+                if (new_freq) {
+                    change.frequency_old = (existingEdits.frequency_old !== undefined) ? existingEdits.frequency_old : old_freq;
+                    change.frequency_new = new_freq;
+                }
+                if (new_evidence) {
+                    change.evidence_old = (existingEdits.evidence_old !== undefined) ? existingEdits.evidence_old : old_evidence;
+                    change.evidence_new = new_evidence;
+                }
 
                 if (Object.keys(change).length === 0) {
                     // nothing changed -> close
@@ -1466,15 +1505,22 @@
                     return;
                 }
 
-                // Save to UI_TASK_EDITS map
-                UI_TASK_EDITS[taskId] = Object.assign({}, UI_TASK_EDITS[taskId] || {}, change);
+                // Merge with any existing edits but do NOT overwrite existing *_old fields
+                const merged = Object.assign({}, existingEdits);
 
-                // Apply changes to DB_DATA_TASKS (in-memory only) so the UI shows new values
+                // copy new values and ensure old fields remain the preserved original
+                for (const k in change) {
+                    merged[k] = change[k];
+                }
+                // Assign back
+                UI_TASK_EDITS[taskId] = merged;
+
+                // Apply changes to DB_DATA_TASKS (in-memory only) so the UI shows latest values
                 if (!DB_DATA_TASKS[taskId]) DB_DATA_TASKS[taskId] = {};
-                if (change.taskName_new) DB_DATA_TASKS[taskId].taskName = change.taskName_new;
-                if (change.keyResult_new) DB_DATA_TASKS[taskId].keyResult = change.keyResult_new;
-                if (change.frequency_new) DB_DATA_TASKS[taskId].frequency = change.frequency_new;
-                if (change.evidence_new) DB_DATA_TASKS[taskId].taskEvidence = change.evidence_new;
+                if (merged.taskName_new) DB_DATA_TASKS[taskId].taskName = merged.taskName_new;
+                if (merged.keyResult_new) DB_DATA_TASKS[taskId].keyResult = merged.keyResult_new;
+                if (merged.frequency_new) DB_DATA_TASKS[taskId].frequency = merged.frequency_new;
+                if (merged.evidence_new) DB_DATA_TASKS[taskId].taskEvidence = merged.evidence_new;
 
                 // Update the specific table row (if visible)
                 const row = document.querySelector(`#userTasksTable tbody tr[data-taskid="${CSS.escape(taskId)}"]`);
@@ -1482,24 +1528,22 @@
                     const fq = row.querySelector('.col-frequency');
                     const tn = row.querySelector('.col-taskname');
                     const kr = row.querySelector('.col-keyresults');
-                    if (fq && change.frequency_new) fq.textContent = change.frequency_new;
-                    if (tn && change.taskName_new) {
-                        // update anchor text if present, otherwise replace td text
+                    if (fq && merged.frequency_new) fq.textContent = merged.frequency_new;
+                    if (tn && merged.taskName_new) {
                         const anchor = tn.querySelector('.task-edit-link');
-                        if (anchor) anchor.textContent = change.taskName_new;
-                        else tn.textContent = change.taskName_new;
+                        if (anchor) anchor.textContent = merged.taskName_new;
+                        else tn.textContent = merged.taskName_new;
                     }
-
-                    if (kr && change.keyResult_new) kr.textContent = change.keyResult_new;
+                    if (kr && merged.keyResult_new) kr.textContent = merged.keyResult_new;
                 }
-                // >>> TASK 2: ensure the edited task is checked so it will be included in the request
+
+                // Ensure the edited task is checked so it will be included in the request
                 try {
                     const cbForTask = document.querySelector(`.task-checkbox[value="${CSS.escape(taskId)}"]`);
                     if (cbForTask) {
                         cbForTask.checked = true;
                         const rowForCheck = cbForTask.closest('tr');
                         if (rowForCheck) rowForCheck.classList.add('selected');
-                        // enable the Request Access button
                         const requestAccessBtn = document.getElementById('requestAccessBtn');
                         if (requestAccessBtn) requestAccessBtn.disabled = false;
                     }
@@ -1508,14 +1552,13 @@
                 }
 
                 closeUserTaskPopup();
-                // Optionally show a toast / alert
-                // alert('Changes applied in UI. They are not saved to the server yet.');
-
+                // Optional: alert('Changes applied in UI. They are not saved to the server yet.');
             } catch (e) {
                 console.error('saveUserTaskEdit', e);
                 alert('Failed to save UI changes.');
             }
         }
+
 
         // Build JSON payload as client requested (only includes keyResult example, but we include all changed fields)
         function buildChangesPayload() {
