@@ -148,7 +148,9 @@ function fetchUserTaskData() {
                     taskName: task["Task Name"],
                     keyResult: task["Key Results"],
                     taskEvidence: task["Task Evidence"],
-                    frequency: task["Frequency"]
+                    frequency: task["Frequency"],
+                    vision: task["Vision"],
+                    process: task["Process"]
                 }
             });
             return JSON.stringify({ status: 'success', data: tasksDataToReturn });
