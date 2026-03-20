@@ -1,3 +1,6 @@
+// Put the ID of the new Backup spreadsheet you created in Drive here:
+const BACKUP_SPREADSHEET_ID = '1d21wYEjAJKOVlsfWbC8mxjjDeszsRJYu6dIaSqQhGzE';
+
 function transferThenRemoveDisabledResponses() {
     const t = transferDisabledResponses_CopyOnly(),
         r = removeResponses();
@@ -19,7 +22,9 @@ function transferDisabledResponses_CopyOnly() {
 function copyResponsesForTaskIds(taskIds) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const responsesSheet = ss.getSheetByName('Responses');
-    const backupSheet = getOrCreateSheet(ss, 'Backup');
+    // const backupSheet = getOrCreateSheet(ss, 'Backup');
+    const backupSheet = getBackupSheet(ss);
+
 
     if (!responsesSheet) throw new Error('Responses sheet not found.');
 
@@ -259,4 +264,27 @@ function removeResponses() {
 
     Logger.log(`Removed ${removedIds.length} response(s) for disabled TaskIds. IDs: ${removedIds.join(', ')}`);
     return { removedCount: removedIds.length, removedIds };
+}
+
+
+//  other seprated sheet Transfer
+// ---------- Simple Drive target helper (paste once in your script) ----------
+// Falls back to the local 'Backup' sheet if anything goes wrong.
+function getBackupSheet(localSs) {
+    if (BACKUP_SPREADSHEET_ID && BACKUP_SPREADSHEET_ID.toString().trim() !== '') {
+        try {
+            const destSs = SpreadsheetApp.openById(BACKUP_SPREADSHEET_ID);
+            let sheet = destSs.getSheetByName('Backup');
+            if (!sheet) {
+                // create a sheet named 'Backup' in the destination if missing
+                sheet = destSs.insertSheet('Backup');
+            }
+            return sheet;
+        } catch (e) {
+            // Could not open destination (bad ID or permission) -> log and fallback to local Backup
+            Logger.log('getBackupSheet: failed to open destination spreadsheet by ID. Falling back to local Backup. Error: ' + e.message);
+        }
+    }
+    // fallback: use local Backup sheet (existing behavior)
+    return getOrCreateSheet(localSs, 'Backup');
 }
