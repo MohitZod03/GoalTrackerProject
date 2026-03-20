@@ -3,9 +3,9 @@ function testDataCreationForAllFrequency() {
     //weeklyTaskInsert(); 
     //yearlyTaskInsertTypeA();
     // monthlyTaskInsert();
-    // weeklyTaskInsert();
+    weeklyTaskInsert();
     // halfYearlyTaskInsertTypeA();
-    quarterlyTaskInsertTypeA();
+    //quarterlyTaskInsertTypeA();
 }
 
 function yearlyTaskInsertTypeA() { taskInsert("Yearly", "A"); } // 3 month before // 1.5 months before session end

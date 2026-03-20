@@ -777,6 +777,10 @@
             document.getElementById('goal').value = DB_DATA_TASKS[task['TaskId']]["goal"];
             document.getElementById('popupTaskName').value = DB_DATA_TASKS[task['TaskId']]["taskName"];
             document.getElementById('keyResults').value = DB_DATA_TASKS[task['TaskId']]["keyResult"];
+
+            document.getElementById('vision').value = DB_DATA_TASKS[task['TaskId']]["vision"];
+            document.getElementById('process').value = DB_DATA_TASKS[task['TaskId']]["process"];
+
             document.getElementById('popupProgressStatus').value = task['Progress Status'];
             document.getElementById('popupRemarks').value = task['Remarks'];
             document.getElementById('popupTaskEvidence').value = DB_DATA_TASKS[task['TaskId']]["taskEvidence"];
