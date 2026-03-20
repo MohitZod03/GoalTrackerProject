@@ -198,7 +198,8 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 450px;
+            width: 820px;
+            max-width: 95vw;
             background: white;
             border-radius: 10px;
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
@@ -229,22 +230,25 @@
             text-align: center;
         }
         
-        .popup-content {
-            font-size: 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
+        #popup .popup-content {
+            font-size: 14px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 20px;
             padding: 10px;
-            max-height: 60vh;
-            overflow-y: auto;
         }
         
-        .popup-content label {
+        #popup .popup-content .pd-field {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #popup .popup-content label {
             font-weight: bold;
         }
         
-        .popup-content input,
-        .popup-content select {
+        #popup .popup-content input,
+        #popup .popup-content select {
             width: 100%;
             padding: 8px;
             border: 1px solid #ccc;
@@ -851,47 +855,66 @@
                 <div id="popup">
                     <div class="popup-header">Task Details</div>
                     <div class="popup-content">
-                        <label>Task ID:</label>
-                        <input type="text" id="popupTaskId" disabled>
 
-                        <label>Goal:</label>
-                        <input type="text" id="goal" disabled>
+                        <div class="pd-field">
+                            <label>Task ID:</label>
+                            <input type="text" id="popupTaskId" disabled>
+                        </div>
+                        <div class="pd-field">
+                            <label>Goal:</label>
+                            <input type="text" id="goal" disabled>
+                        </div>
 
-                        <label>Task Name:</label>
-                        <input type="text" id="popupTaskName" disabled>
+                        <div class="pd-field">
+                            <label>Task Name:</label>
+                            <input type="text" id="popupTaskName" disabled>
+                        </div>
+                        <div class="pd-field">
+                            <label>Key Results:</label>
+                            <input type="text" id="keyResults" disabled>
+                        </div>
 
-                        <label>Key Results:</label>
-                        <input type="text" id="keyResults" disabled>
+                        <div class="pd-field">
+                            <label>Vision:</label>
+                            <input type="text" id="vision" disabled>
+                        </div>
+                        <div class="pd-field">
+                            <label>Process:</label>
+                            <input type="text" id="process" disabled>
+                        </div>
 
-                        <label>Vision:</label>
-                        <input type="text" id="vision" disabled>
+                        <div class="pd-field">
+                            <label>Progress Status:</label>
+                            <select id="popupProgressStatus">
+                                <option value="Not Started">Not Started</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="Done">Done</option>
+                                <option value="NA">Not Applicable</option>
+                            </select>
+                        </div>
+                        <div class="pd-field">
+                            <label>Remarks:</label>
+                            <input type="text" id="popupRemarks">
+                        </div>
 
-                        <label>Process:</label>
-                        <input type="text" id="process" disabled>
+                        <div class="pd-field">
+                            <label>Task Evidence:</label>
+                            <input type="text" id="popupTaskEvidence" readonly onclick="if(this.value.trim()) window.open(this.value, '_blank')" style="cursor:pointer; color:blue; text-decoration:underline;">
+                        </div>
+                        <div class="pd-field">
+                            <label>New Evidence:</label>
+                            <input type="text" id="popupEvidence" />
+                        </div>
 
-                        <label>Progress Status:</label>
-                        <select id="popupProgressStatus">
-                            <option value="Not Started">Not Started</option>
-                            <option value="In Progress">In Progress</option>
-                            <option value="Done">Done</option>
-                            <option value ="NA">Not Applicable</option>
-                        </select>
+                        <div class="pd-field">
+                            <label>Due Date:</label>
+                            <input type="text" id="popupDueDate" disabled>
+                        </div>
+                        <div class="pd-field">
+                            <label>Escalation:</label>
+                            <input type="text" id="popupEscalation" disabled>
+                        </div>
 
-                        <label>Remarks:</label>
-                        <input type="text" id="popupRemarks">
-
-                        <label>Task Evidence:</label>
-                        <input type="text" id="popupTaskEvidence" readonly onclick="if(this.value.trim()) window.open(this.value, '_blank')" style="cursor: pointer; color: blue; text-decoration: underline;">Add commentMore actions
-
-
-                        <label>New Evidence:</label>
-                        <input type="text" id="popupEvidence" />
-
-                        <label>Due Date:</label>
-                        <input type="text" id="popupDueDate" disabled>
-
-                        <label>Escalation:</label>
-                        <input type="text" id="popupEscalation" disabled>
                     </div>
 
                     <div class="popup-buttons">
