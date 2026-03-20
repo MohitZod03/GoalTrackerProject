@@ -556,13 +556,11 @@ function sendAccessRequestEmail(payload) {
                 if (id.indexOf('@') !== -1) {
                     // looks like email
                     resolved = (typeof fetchFilteredDataWithMap === 'function') ?
-                        (fetchFilteredDataWithMap('Users', { Email: id }) || [])[0] || { Email: id, UserId: id } :
-                        { Email: id, UserId: id };
+                        (fetchFilteredDataWithMap('Users', { Email: id }) || [])[0] || { Email: id, UserId: id } : { Email: id, UserId: id };
                 } else {
                     // probably a UserId
                     resolved = (typeof fetchFilteredDataWithMap === 'function') ?
-                        (fetchFilteredDataWithMap('Users', { UserId: id }) || [])[0] || { UserId: id } :
-                        { UserId: id };
+                        (fetchFilteredDataWithMap('Users', { UserId: id }) || [])[0] || { UserId: id } : { UserId: id };
                 }
                 // ensure we at least have an Email or UserId
                 if (resolved) {
