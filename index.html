@@ -122,6 +122,16 @@
             const userInfo = document.getElementById('user-info');
             userInfo.textContent = `Welcome, ${userName}`;
 
+            // Allow userTask Or not
+            google.script.run.withSuccessHandler(function(userData) {
+                const allow = (userData["AllowTaskChanges"] || "").toString().trim().toUpperCase();
+
+                if (allow === "N") {
+                    const btn = document.getElementById("ut");
+                    if (btn) btn.style.display = "none";
+                }
+            }).fetchUserDataForProfile();
+
             // Load cached requests (so the small table is available immediately)
             await loadCachedRequestsFromIndexedDB();
 
