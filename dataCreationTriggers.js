@@ -2,8 +2,8 @@
 function testDataCreationForAllFrequency() {
     //weeklyTaskInsert(); 
     //yearlyTaskInsertTypeA();
-    // monthlyTaskInsert();
-    weeklyTaskInsert();
+    monthlyTaskInsert();
+    //  weeklyTaskInsert();
     // halfYearlyTaskInsertTypeA();
     //quarterlyTaskInsertTypeA();
 }

@@ -643,6 +643,241 @@
             text-align: left;
             font-size: 14px;
         }
+        /* ===== CREATED TASKS SECTION ===== */
+        
+        #createdTasksSection {
+            padding: 16px;
+        }
+        
+        #createdTasksSection h2 {
+            margin: 0;
+            font-size: 20px;
+            color: #333;
+        }
+        
+        #createdTasksTable thead tr {
+            background-color: #2c3e50 !important;
+        }
+        
+        #createdTasksTable thead th {
+            background-color: #2c3e50 !important;
+            color: #fff !important;
+        }
+        
+        #createdTasksTable tbody tr {
+            background-color: #fff !important;
+            color: #333 !important;
+        }
+        
+        #createdTasksTable tbody td {
+            color: #333 !important;
+        }
+        
+        #createdTasksTable tbody tr:hover {
+            background-color: #f0f4f8 !important;
+            color: #333 !important;
+            cursor: default;
+        }
+        
+        #createdTasksTable th,
+        #createdTasksTable td {
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            font-size: 13px;
+            text-align: left;
+        }
+        
+        #addTaskBtn {
+            padding: 10px 20px;
+            background-color: #1abc9c;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        #addTaskBtn:hover {
+            background-color: #16a085;
+        }
+        
+        #addTaskPopupOverlay {
+            position: fixed;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.45);
+            z-index: 2001;
+            display: none;
+        }
+        
+        #addTaskPopup {
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 10px 35px rgba(0, 0, 0, 0.3);
+            z-index: 2002;
+            width: 520px;
+            max-width: 92%;
+            display: none;
+            overflow: hidden;
+        }
+        
+        #addTaskPopup .popup-header {
+            font-weight: 600;
+            padding: 14px 20px;
+            border-bottom: 1px solid #e5e5e5;
+            text-align: center;
+            font-size: 16px;
+            background: #f8f9fa;
+            color: #333;
+        }
+        
+        #addTaskPopup .atp-body {
+            max-height: 62vh;
+            overflow-y: auto;
+            padding: 16px 20px;
+        }
+        
+        #addTaskPopup label {
+            font-weight: 600;
+            font-size: 13px;
+            color: #333;
+            display: block;
+            margin-top: 12px;
+            margin-bottom: 4px;
+        }
+        
+        #addTaskPopup label span.req {
+            color: red;
+            margin-left: 2px;
+        }
+        
+        #addTaskPopup input[type="text"],
+        #addTaskPopup input[type="date"],
+        #addTaskPopup select {
+            width: 100%;
+            padding: 9px 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            font-size: 13px;
+            font-family: 'Poppins', sans-serif;
+            color: #333;
+            background: #fff;
+        }
+        
+        #addTaskPopup input:focus,
+        #addTaskPopup select:focus {
+            border-color: #1abc9c;
+            outline: none;
+        }
+        
+        #addTaskPopup input:disabled,
+        #addTaskPopup select:disabled {
+            background: #f5f5f5;
+            color: #aaa;
+            cursor: not-allowed;
+        }
+        
+        #addTaskPopup .repeat-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        
+        #addTaskPopup .atp-footer {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 20px;
+            border-top: 1px solid #ddd;
+            background: #fff;
+        }
+        
+        #addTaskPopup .atp-footer button {
+            width: 48%;
+            padding: 11px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            font-family: 'Poppins', sans-serif;
+        }
+        
+        #addTaskPopup .atp-footer .cancel {
+            background: #ccc;
+            color: #333;
+        }
+        
+        #addTaskPopup .atp-footer .cancel:hover {
+            background: #b3b3b3;
+        }
+        
+        #addTaskPopup .atp-footer .save {
+            background: #1abc9c;
+            color: white;
+        }
+        
+        #addTaskPopup .atp-footer .save:hover {
+            background: #16a085;
+        }
+        
+        .atp-error {
+            color: red;
+            font-size: 12px;
+            margin-top: 2px;
+            display: none;
+        }
+        /* ===== EDIT CREATED TASK POPUP ===== */
+        
+        #editCreatedTaskPopup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 820px;
+            max-width: 95vw;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            padding: 20px;
+            animation: fadeIn 0.3s ease-in-out;
+            z-index: 1000;
+            overflow: hidden;
+        }
+        /* 2-column grid — mirrors #popup .popup-content exactly */
+        
+        #editCreatedTaskPopup .popup-content {
+            font-size: 14px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 20px;
+            padding: 10px;
+        }
+        
+        #editCreatedTaskPopup .popup-content .pd-field {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #editCreatedTaskPopup .popup-content label {
+            font-weight: bold;
+        }
+        
+        #editCreatedTaskPopup .popup-content input,
+        #editCreatedTaskPopup .popup-content select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
     </style>
     <script>
     </script>
@@ -667,6 +902,7 @@
         <!-- Sidebar -->
         <div class="sidebar">
             <a href="#" class="profile" id="p" onclick="viewProfile()">Profile</a>
+            <a href="#" class="task-category" id="crt" onclick="handleCreatedTasks()">Tasks</a>
             <a href="#" class="task-category" id="ut" onclick="handleUserTasks()">User Tasks</a>
             <div class="tasks-section">Tasks</div>
             <a href="#" class="task-category" id="ct" onclick="handleAllCurrentTasks()">All Current Task</a>
@@ -816,6 +1052,158 @@
                     </div>
                 </div>
             </div>
+
+            <!-- ===== CREATED TASKS SECTION ===== -->
+            <div id="createdTasksSection" style="display:none;">
+                <div style="display:flex; align-items:center; margin-bottom:10px;">
+                    <h2 style="margin:0;">Created Tasks</h2>
+                    <button id="addTaskBtn" style="margin-left:auto;" onclick="openAddTaskPopup()">+ Add Task</button>
+                </div>
+                <table id="createdTasksTable" style="width:100%; border-collapse:collapse; margin-top:8px;">
+                    <thead>
+                        <tr>
+                            <th>Task ID</th>
+                            <th>Goal</th>
+                            <th>Task Name</th>
+                            <th>Start Date</th>
+                            <th>End Date</th>
+                            <th>Assign To</th>
+                            <th>Created By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td colspan="6" style="text-align:center;color:#888;">Loading...</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <div id="addTaskPopupOverlay"></div>
+                <div id="addTaskPopup">
+                    <div class="popup-header">Add New Task</div>
+                    <div class="atp-body">
+                        <label>Goal <span class="req">*</span></label>
+                        <input type="text" id="atp_goal" placeholder="Enter goal" />
+                        <div class="atp-error" id="err_goal">Goal is required.</div>
+
+                        <label>Task Name <span class="req">*</span></label>
+                        <input type="text" id="atp_taskName" placeholder="Enter task name" />
+                        <div class="atp-error" id="err_taskName">Task Name is required.</div>
+
+                        <label>Key Result</label>
+                        <input type="text" id="atp_keyResult" placeholder="Enter key result" />
+
+                        <label>Start Date <span class="req">*</span></label>
+                        <input type="date" id="atp_startDate" />
+                        <div class="atp-error" id="err_startDate">Start Date is required.</div>
+
+                        <label>End Date <span class="req">*</span></label>
+                        <input type="date" id="atp_endDate" />
+                        <div class="atp-error" id="err_endDate">End Date is required and must be after Start Date.</div>
+
+                        <div class="repeat-row">
+                            <input type="checkbox" id="atp_repeat" onchange="toggleFrequency()" />
+                            <label for="atp_repeat" style="font-weight:500; margin:0;">Repeat</label>
+                        </div>
+
+                        <label>Frequency</label>
+                        <select id="atp_frequency" disabled>
+        <option value="">-- Select Frequency --</option>
+        <option>Weekly</option>
+        <option>Fortnightly</option>
+        <option>Monthly</option>
+        <option>Quarterly</option>
+        <option>Biyearly</option>
+        <option>Yearly</option>
+      </select>
+                        <div class="atp-error" id="err_frequency">Frequency is required when Repeat is checked.</div>
+
+                        <label>Task Evidence</label>
+                        <input type="text" id="atp_taskEvidence" placeholder="Paste URL or text" />
+
+                        <label>Assign To <span class="req">*</span></label>
+                        <select id="atp_userSelect" onchange="onUserSelectChange()">
+        <option value="">-- Select User --</option>
+      </select>
+                        <div class="atp-error" id="err_profileId">Profile selection is required.</div>
+
+                        <label>Profile ID (auto-filled)</label>
+                        <input type="text" id="atp_profileId" readonly placeholder="Auto-filled from user selection" />
+                    </div>
+                    <div class="atp-footer">
+                        <button class="cancel" onclick="closeAddTaskPopup()">Cancel</button>
+                        <button class="save" onclick="submitAddTask()">Save Task</button>
+                    </div>
+                </div>
+            </div>
+            <!-- ===== EDIT CREATED TASK POPUP ===== -->
+            <div id="editCreatedTaskOverlay" class="popup-overlay" style="display:none;"></div>
+            <div id="editCreatedTaskPopup" style="display:none;">
+                <input type="hidden" id="ect_taskId">
+                <div class="popup-header">Edit Task Details</div>
+                <div class="popup-content">
+
+                    <div class="pd-field">
+                        <label>Goal (old):</label>
+                        <input type="text" id="ect_goal_old" disabled>
+                    </div>
+                    <div class="pd-field">
+                        <label>Goal (new):</label>
+                        <input type="text" id="ect_goal_new" placeholder="Enter new goal">
+                    </div>
+
+                    <div class="pd-field">
+                        <label>Task Name (old):</label>
+                        <input type="text" id="ect_taskName_old" disabled>
+                    </div>
+                    <div class="pd-field">
+                        <label>Task Name (new):</label>
+                        <input type="text" id="ect_taskName_new" placeholder="Enter new task name">
+                    </div>
+
+                    <div class="pd-field">
+                        <label>Key Result (old):</label>
+                        <input type="text" id="ect_keyResult_old" disabled>
+                    </div>
+                    <div class="pd-field">
+                        <label>Key Result (new):</label>
+                        <input type="text" id="ect_keyResult_new" placeholder="Enter new key result">
+                    </div>
+
+                    <div class="pd-field">
+                        <label>Start Date (old):</label>
+                        <input type="text" id="ect_startDate_old" disabled>
+                    </div>
+                    <div class="pd-field">
+                        <label>Start Date (new):</label>
+                        <input type="date" id="ect_startDate_new">
+                    </div>
+
+                    <div class="pd-field">
+                        <label>End Date (old):</label>
+                        <input type="text" id="ect_endDate_old" disabled>
+                    </div>
+                    <div class="pd-field">
+                        <label>End Date (new):</label>
+                        <input type="date" id="ect_endDate_new">
+                    </div>
+
+                    <div class="pd-field">
+                        <label>Task Evidence (old):</label>
+                        <input type="text" id="ect_evidence_old" disabled onclick="if(this.value.trim()) window.open(this.value,'_blank')" style="cursor:pointer;color:blue;text-decoration:underline;">
+                    </div>
+                    <div class="pd-field">
+                        <label>Task Evidence (new):</label>
+                        <input type="text" id="ect_evidence_new" placeholder="Paste URL or text">
+                    </div>
+
+                </div>
+                <div class="popup-buttons">
+                    <button class="cancel" onclick="closeEditCreatedTaskPopup()">Cancel</button>
+                    <button class="done" onclick="submitEditCreatedTask()">Done</button>
+                </div>
+            </div>
+
 
             <div id="taskSection">
 
