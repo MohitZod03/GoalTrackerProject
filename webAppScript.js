@@ -301,3 +301,130 @@ function getUserTasks() {
             keyResults: r[idx('Key Results')]
         }));
 }
+
+//feach data created Task 
+
+function fetchCreatedTasks() {
+    try {
+        const userData = getCacheValue('userData');
+        if (!userData) return [];
+        return fetchCreatedTasksData(userData['UserId']);
+    } catch (e) { console.error('fetchCreatedTasks', e); return []; }
+}
+
+function fetchUsersForDropdown() {
+    try {
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Users');
+        if (!sheet) return [];
+        const [headers, ...rows] = sheet.getDataRange().getValues();
+        const idx = (n) => headers.indexOf(n);
+        return rows
+            .filter(r => (r[idx('Active')] || '').toString().trim().toUpperCase() !== 'N')
+            .map(r => ({
+                userId: (r[idx('UserId')] || '').toString(),
+                name: (r[idx('User Name')] || '').toString(),
+                email: (r[idx('Email')] || '').toString(),
+                profileId: (r[idx('ProfileId')] || '').toString()
+            }));
+    } catch (e) { console.error('fetchUsersForDropdown', e); return []; }
+}
+
+function createNewTask(taskData) {
+    try {
+        const userData = getCacheValue('userData');
+        if (!userData) return { status: 'fail', message: 'Session expired. Please reload.' };
+        const currentUserId = userData['UserId'];
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Tasks');
+        if (!sheet) return { status: 'fail', message: 'Tasks sheet not found.' };
+        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        const colIdx = {};
+        headers.forEach((h, i) => colIdx[h] = i);
+        const newRow = new Array(headers.length).fill('');
+        const set = (col, val) => { if (colIdx[col] !== undefined) newRow[colIdx[col]] = val; };
+        set('TaskId', generateTaskId(sheet, headers));
+        set('Goal', taskData.goal || '');
+        set('Task Name', taskData.taskName || '');
+        set('Key Results', taskData.keyResult || '');
+        set('ProfileId', taskData.profileId || '');
+        set('Frequency', taskData.frequency || '');
+        set('Task Evidence', taskData.taskEvidence || '');
+        set('StartDate', taskData.startDate || '');
+        set('EndDate', taskData.endDate || '');
+        set('Repeat', taskData.repeat || 'No');
+        set('CreatedBy', currentUserId);
+        sheet.appendRow(newRow);
+        SpreadsheetApp.flush();
+        const newId = newRow[colIdx['TaskId']];
+        return { status: 'success', message: 'Task "' + taskData.taskName + '" created successfully.', taskId: newId };
+    } catch (e) { console.error('createNewTask', e); return { status: 'fail', message: 'Error: ' + e.message }; }
+}
+
+function generateTaskId(sheet, headers) {
+    try {
+        const idCol = headers.indexOf('TaskId');
+        if (idCol === -1) return 'T' + Date.now();
+        const lastRow = sheet.getLastRow();
+        if (lastRow < 2) return 'T00001';
+        const ids = sheet.getRange(2, idCol + 1, lastRow - 1, 1).getValues().map(r => (r[0] || '').toString().trim()).filter(Boolean);
+        let max = 0;
+        ids.forEach(id => { const m = id.match(/(\d+)$/); if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; } });
+        return 'T' + String(max + 1).padStart(5, '0');
+    } catch (e) { return 'T' + Date.now(); }
+}
+
+function formatDateValue(val) {
+    if (!val) return '';
+    if (val instanceof Date) {
+        return val.getFullYear() + '-' + String(val.getMonth() + 1).padStart(2, '0') + '-' + String(val.getDate()).padStart(2, '0');
+    }
+    return val.toString();
+}
+
+function updateCreatedTask(data) {
+    try {
+        if (!data || !data.taskId) return { status: 'fail', message: 'No task ID provided.' };
+
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Tasks');
+        if (!sheet) return { status: 'fail', message: 'Tasks sheet not found.' };
+
+        const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+        const colIdx = {};
+        headers.forEach((h, i) => colIdx[h] = i + 1); // 1-based
+
+        const idCol = colIdx['TaskId'];
+        const lastRow = sheet.getLastRow();
+        if (!idCol || lastRow < 2) return { status: 'fail', message: 'TaskId column missing.' };
+
+        const ids = sheet.getRange(2, idCol, lastRow - 1, 1).getValues();
+        let targetRow = -1;
+        for (let i = 0; i < ids.length; i++) {
+            if ((ids[i][0] || '').toString().trim() === data.taskId.toString().trim()) {
+                targetRow = i + 2;
+                break;
+            }
+        }
+        if (targetRow === -1) return { status: 'fail', message: 'Task not found: ' + data.taskId };
+
+        // Map payload keys → sheet column names
+        const fieldMap = {
+            goal: 'Goal',
+            taskName: 'Task Name',
+            keyResult: 'Key Results',
+            startDate: 'StartDate',
+            endDate: 'EndDate',
+            taskEvidence: 'Task Evidence'
+        };
+
+        Object.entries(fieldMap).forEach(([key, col]) => {
+            if (data[key] !== undefined && colIdx[col]) {
+                sheet.getRange(targetRow, colIdx[col]).setValue(data[key]);
+            }
+        });
+
+        SpreadsheetApp.flush();
+        return { status: 'success', message: 'Task "' + data.taskId + '" updated successfully.' };
+    } catch (e) {
+        console.error('updateCreatedTask', e);
+        return { status: 'fail', message: 'Error: ' + e.message };
+    }
+}

@@ -294,3 +294,38 @@ function getMyRequests() {
         return JSON.stringify({ status: 'fail', message: String(e) });
     }
 }
+
+function fetchCreatedTasksData(userId) {
+    const filter = { 'CreatedBy': userId };
+    const rows = fetchFilteredDataWithMap('Tasks', filter);
+
+    // one read — build two lookup maps
+    const userNameMap = {}; // UserId   → User Name
+    const profileNameMap = {}; // ProfileId → User Name
+    try {
+        const [uH, ...uR] = SpreadsheetApp.getActiveSpreadsheet()
+            .getSheetByName('Users').getDataRange().getValues();
+        const ui = uH.indexOf('UserId'),
+            ni = uH.indexOf('User Name'),
+            pi = uH.indexOf('ProfileId');
+        uR.forEach(r => {
+            const uid = (r[ui] || '').toString().trim();
+            const nm = (r[ni] || '').toString().trim();
+            const pid = (r[pi] || '').toString().trim();
+            if (uid) userNameMap[uid] = nm;
+            if (pid && !profileNameMap[pid]) profileNameMap[pid] = nm;
+        });
+    } catch (e) { console.error('fetchCreatedTasksData lookup', e); }
+
+    return rows.map(r => ({
+        taskId: (r['TaskId'] || '').toString(),
+        goal: (r['Goal'] || '').toString(),
+        taskName: (r['Task Name'] || '').toString(),
+        keyResult: (r['Key Results'] || '').toString(),
+        taskEvidence: (r['Task Evidence'] || '').toString(),
+        startDate: formatDateValue(r['StartDate']),
+        endDate: formatDateValue(r['EndDate']),
+        assignTo: profileNameMap[(r['ProfileId'] || '').toString().trim()] || (r['ProfileId'] || '').toString(),
+        createdByName: userNameMap[(r['CreatedBy'] || '').toString().trim()] || (r['CreatedBy'] || '').toString()
+    }));
+}

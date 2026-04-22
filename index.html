@@ -69,6 +69,7 @@
         //1.Mohit 
         const STORE_NAME_REQUESTS = "Requests";
         let DB_DATA_REQUESTS = [];
+        const STORE_NAME_CREATED_TASKS = "CreatedTasks";
 
 
 
@@ -124,6 +125,11 @@
 
             // Allow userTask Or not
             google.script.run.withSuccessHandler(function(userData) {
+
+                sessionStorage.setItem('currentUserId', userData.UserId || '');
+                sessionStorage.setItem('currentProfileId', userData.ProfileId || '');
+                sessionStorage.setItem('currentUserName', userData['User Name'] || '');
+
                 const allow = (userData["AllowTaskChanges"] || "").toString().trim().toUpperCase();
 
                 if (allow === "N") {
@@ -298,6 +304,7 @@
 
                 document.getElementById('profileSection').style.display = "none";
                 document.getElementById('taskSection').style.display = "none";
+                document.getElementById('createdTasksSection').style.display = 'none';
                 document.getElementById('userTasksSection').style.display = 'block';
 
                 // 1) Show cached requests first (fast)
@@ -381,11 +388,16 @@
                     // Subsequent navigations: background refresh only
                     google.script.run.withSuccessHandler(handleMyRequestsFromServer).getMyRequests();
                     google.script.run
-                        .withSuccessHandler((tasks) => {
+                        .withSuccessHandler(async(tasks) => {
                             try {
-                                renderUserTasks(tasks);
+                                if (Array.isArray(tasks) && tasks.length > 0) {
+                                    const arr = tasks.map(t => Object.assign({}, t, {
+                                        TaskId: t.taskId || t.TaskId || ''
+                                    }));
+                                    await updateDataInIndexedDB(arr, STORE_NAME_TASKS, 'TaskId');
+                                }
                             } catch (e) {
-                                console.warn('renderUserTasks error', e);
+                                console.warn('Background task cache update failed', e);
                             }
                         })
                         .withFailureHandler(err => {
@@ -403,6 +415,7 @@
             if (backgroundCode != '#p') {
                 document.getElementById('profileSection').style.display = "none";
                 document.getElementById('userTasksSection').style.display = 'none';
+                document.getElementById('createdTasksSection').style.display = 'none';
                 document.getElementById('taskSection').style.display = "block";
                 document.getElementById('taskFilter').value = "current";
                 if (clickedTask != 'All') {
@@ -417,6 +430,7 @@
                 showLoading();
                 document.getElementById('taskSection').style.display = "none";
                 document.getElementById('userTasksSection').style.display = 'none';
+                document.getElementById('createdTasksSection').style.display = 'none';
                 document.getElementById('profileSection').style.display = "block";
                 google.script.run.withSuccessHandler(populateProfileData).fetchUserDataForProfile();
                 hideLoading();
@@ -1637,6 +1651,335 @@
                     console.warn('Failed to reset task data during clearUiTaskEdits:', error);
                 });
             }
+        }
+
+        // <!-- Created Task Section  -->
+
+
+        // ===== CREATED TASKS =====
+        function handleCreatedTasks() {
+            applyBackgroundForClicked('#crt');
+            createAndUpdateSessionStorage('selectionOnSideBar', 'CreatedTasks');
+            document.getElementById('profileSection').style.display = 'none';
+            document.getElementById('taskSection').style.display = 'none';
+            document.getElementById('userTasksSection').style.display = 'none';
+            document.getElementById('createdTasksSection').style.display = 'block';
+            loadCreatedTasks();
+            loadUsersForDropdown();
+        }
+
+        async function loadCreatedTasks() {
+            const tbody = document.querySelector('#createdTasksTable tbody');
+
+            try {
+                const cached = await getDataFromIndexedDB(STORE_NAME_CREATED_TASKS, 'taskId');
+                if (Array.isArray(cached) && cached.length > 0) {
+                    renderCreatedTasksTable(cached);
+                } else {
+                    if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;">Loading...</td></tr>';
+                }
+            } catch (e) {
+                if (tbody) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;">Loading...</td></tr>';
+            }
+
+            // Background refresh from server
+            google.script.run
+                .withSuccessHandler(async function(tasks) {
+                    if (Array.isArray(tasks) && tasks.length > 0) {
+                        try {
+                            await updateDataInIndexedDB(tasks, STORE_NAME_CREATED_TASKS, 'taskId');
+                        } catch (e) {}
+                    }
+                    renderCreatedTasksTable(tasks);
+                })
+                .withFailureHandler(function(err) {
+                    console.error('fetchCreatedTasks failed', err);
+                })
+                .fetchCreatedTasks();
+        }
+
+        function renderCreatedTasksTable(tasks) {
+            const tbody = document.querySelector('#createdTasksTable tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            if (!Array.isArray(tasks) || tasks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#888;">No tasks created yet.</td></tr>';
+                return;
+            }
+
+            function esc(s) {
+                return s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+            tasks.forEach(function(t) {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${esc(t.taskId)}</td><td>${esc(t.goal)}</td><td>${esc(t.taskName)}</td><td>${esc(t.startDate)}</td><td>${esc(t.endDate)}</td><td>${esc(t.assignTo)}</td><td>${esc(t.createdByName)}</td>`;
+                tr.style.cursor = 'pointer';
+                tr.addEventListener('click', function() {
+                    openEditCreatedTaskPopup(t);
+                });
+                tbody.appendChild(tr);
+            });
+        }
+
+        function loadUsersForDropdown() {
+            const sel = document.getElementById('atp_userSelect');
+            if (!sel) return;
+
+            // Only skip if dropdown already has options loaded
+            if (sel.options.length > 1) return;
+
+            google.script.run
+                .withSuccessHandler(function(users) {
+                    sel.innerHTML = '<option value="">-- Select User --</option>';
+                    if (!users || users.length === 0) {
+                        sel.innerHTML += '<option disabled>No users found</option>';
+                        return;
+                    }
+                    (users || []).forEach(function(u) {
+                        const opt = document.createElement('option');
+                        opt.value = u.profileId;
+                        opt.dataset.profileId = u.profileId;
+                        opt.textContent = u.name + ' (' + u.email + ')';
+                        sel.appendChild(opt);
+                    });
+                })
+                .withFailureHandler(function(err) {
+                    console.error('fetchUsersForDropdown failed', err);
+                    sel.innerHTML = '<option value="">-- Failed to load users --</option>';
+                })
+                .fetchUsersForDropdown();
+        }
+
+        function onUserSelectChange() {
+            const sel = document.getElementById('atp_userSelect');
+            const inp = document.getElementById('atp_profileId');
+            if (sel && inp) inp.value = sel.options[sel.selectedIndex] ? (sel.options[sel.selectedIndex].dataset.profileId || sel.value || '') : '';
+        }
+
+        function toggleFrequency() {
+            const cb = document.getElementById('atp_repeat');
+            const fr = document.getElementById('atp_frequency');
+            if (cb && fr) {
+                fr.disabled = !cb.checked;
+                if (!cb.checked) fr.value = '';
+            }
+        }
+
+        function openAddTaskPopup() {
+            ['atp_goal', 'atp_taskName', 'atp_keyResult', 'atp_taskEvidence', 'atp_profileId'].forEach(function(id) {
+                const e = document.getElementById(id);
+                if (e) e.value = '';
+            });
+            ['atp_startDate', 'atp_endDate'].forEach(function(id) {
+                const e = document.getElementById(id);
+                if (e) e.value = '';
+            });
+            const fr = document.getElementById('atp_frequency');
+            if (fr) {
+                fr.value = '';
+                fr.disabled = true;
+            }
+            const rp = document.getElementById('atp_repeat');
+            if (rp) rp.checked = false;
+            const us = document.getElementById('atp_userSelect');
+            if (us) us.value = '';
+            document.querySelectorAll('.atp-error').forEach(function(e) {
+                e.style.display = 'none';
+            });
+            document.getElementById('addTaskPopupOverlay').style.display = 'block';
+            document.getElementById('addTaskPopup').style.display = 'block';
+            document.body.style.overflow = 'hidden';
+            loadUsersForDropdown();
+        }
+
+        function closeAddTaskPopup() {
+            document.getElementById('addTaskPopupOverlay').style.display = 'none';
+            document.getElementById('addTaskPopup').style.display = 'none';
+            document.body.style.overflow = 'auto';
+        }
+
+        function submitAddTask() {
+            let valid = true;
+
+            function showErr(id, show) {
+                const e = document.getElementById(id);
+                if (e) e.style.display = show ? 'block' : 'none';
+            }
+
+            function val(id) {
+                const e = document.getElementById(id);
+                return e ? e.value.trim() : '';
+            }
+
+            const goal = val('atp_goal');
+            showErr('err_goal', !goal);
+            if (!goal) valid = false;
+            const taskName = val('atp_taskName');
+            showErr('err_taskName', !taskName);
+            if (!taskName) valid = false;
+            const startDate = val('atp_startDate');
+            showErr('err_startDate', !startDate);
+            if (!startDate) valid = false;
+            const endDate = val('atp_endDate');
+            const endBad = !endDate || (startDate && endDate && endDate < startDate);
+            showErr('err_endDate', endBad);
+            if (endBad) valid = false;
+            const profileId = val('atp_profileId');
+            showErr('err_profileId', !profileId);
+            if (!profileId) valid = false;
+            const repeatChecked = document.getElementById('atp_repeat') && document.getElementById('atp_repeat').checked;
+            const frequency = val('atp_frequency');
+            const freqBad = repeatChecked && !frequency;
+            showErr('err_frequency', freqBad);
+            if (freqBad) valid = false;
+
+            if (!valid) return;
+
+            showLoading();
+            google.script.run
+                .withSuccessHandler(async function(res) {
+                    hideLoading();
+                    if (res && res.status === 'success') {
+                        closeAddTaskPopup();
+                        alert(res.message || 'Task created.');
+                        // Add new row locally to cache and re-render instantly — no server call
+                        try {
+                            const cached = await getDataFromIndexedDB(STORE_NAME_CREATED_TASKS, 'taskId');
+                            const existing = Array.isArray(cached) ? cached : [];
+                            const newEntry = {
+                                taskId: res.taskId || '',
+                                goal: val('atp_goal'),
+                                taskName: val('atp_taskName'),
+                                keyResult: val('atp_keyResult'),
+                                startDate: val('atp_startDate'),
+                                endDate: val('atp_endDate'),
+                                assignTo: document.getElementById('atp_userSelect').options[document.getElementById('atp_userSelect').selectedIndex] ? .text.split('(')[0].trim() || val('atp_profileId'),
+                                createdByName: sessionStorage.getItem('currentUserName') || ''
+                            };
+                            existing.push(newEntry);
+                            await updateDataInIndexedDB(existing, STORE_NAME_CREATED_TASKS, 'taskId');
+                            renderCreatedTasksTable(existing);
+                        } catch (e) {
+                            // fallback to server fetch only if local update fails
+                            loadCreatedTasks();
+                        }
+                    } else {
+                        alert('Failed: ' + (res && res.message ? res.message : 'Server error'));
+                    }
+                })
+                .withFailureHandler(function(err) {
+                    hideLoading();
+                    alert('Error: ' + (err && err.message ? err.message : 'Unknown'));
+                })
+                .createNewTask({
+                    goal,
+                    taskName,
+                    keyResult: val('atp_keyResult'),
+                    startDate,
+                    endDate,
+                    repeat: repeatChecked ? 'Yes' : 'No',
+                    frequency,
+                    taskEvidence: val('atp_taskEvidence'),
+                    profileId
+                });
+        }
+
+        // ===== EDIT CREATED TASK POPUP =====
+        let _ectCurrentTask = null;
+
+        function openEditCreatedTaskPopup(t) {
+            _ectCurrentTask = t;
+            document.getElementById('ect_taskId').value = t.taskId || '';
+            document.getElementById('ect_goal_old').value = t.goal || '';
+            document.getElementById('ect_goal_new').value = '';
+            document.getElementById('ect_taskName_old').value = t.taskName || '';
+            document.getElementById('ect_taskName_new').value = '';
+            document.getElementById('ect_keyResult_old').value = t.keyResult || '';
+            document.getElementById('ect_keyResult_new').value = '';
+            document.getElementById('ect_startDate_old').value = t.startDate || '';
+            document.getElementById('ect_startDate_new').value = '';
+            document.getElementById('ect_endDate_old').value = t.endDate || '';
+            document.getElementById('ect_endDate_new').value = '';
+            document.getElementById('ect_evidence_old').value = t.taskEvidence || '';
+            document.getElementById('ect_evidence_new').value = '';
+
+            document.getElementById('editCreatedTaskOverlay').style.display = 'block';
+            document.getElementById('editCreatedTaskPopup').style.display = 'block';
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeEditCreatedTaskPopup() {
+            document.getElementById('editCreatedTaskOverlay').style.display = 'none';
+            document.getElementById('editCreatedTaskPopup').style.display = 'none';
+            document.body.style.overflow = 'auto';
+            _ectCurrentTask = null;
+        }
+
+        function submitEditCreatedTask() {
+            if (!_ectCurrentTask) return;
+            const taskId = _ectCurrentTask.taskId;
+
+            // Collect only filled new values; fall back to old if blank
+            const payload = {
+                taskId: taskId,
+                goal: document.getElementById('ect_goal_new').value.trim() || _ectCurrentTask.goal,
+                taskName: document.getElementById('ect_taskName_new').value.trim() || _ectCurrentTask.taskName,
+                keyResult: document.getElementById('ect_keyResult_new').value.trim() || _ectCurrentTask.keyResult || '',
+                startDate: document.getElementById('ect_startDate_new').value || _ectCurrentTask.startDate,
+                endDate: document.getElementById('ect_endDate_new').value || _ectCurrentTask.endDate,
+                taskEvidence: document.getElementById('ect_evidence_new').value.trim() || _ectCurrentTask.taskEvidence || ''
+            };
+
+            // Must have at least one actual change
+            const hasChange =
+                payload.goal !== _ectCurrentTask.goal ||
+                payload.taskName !== _ectCurrentTask.taskName ||
+                payload.keyResult !== (_ectCurrentTask.keyResult || '') ||
+                payload.startDate !== _ectCurrentTask.startDate ||
+                payload.endDate !== _ectCurrentTask.endDate ||
+                payload.taskEvidence !== (_ectCurrentTask.taskEvidence || '');
+
+            if (!hasChange) {
+                closeEditCreatedTaskPopup();
+                return;
+            }
+
+            showLoading();
+            google.script.run
+                .withSuccessHandler(async function(res) {
+                    hideLoading();
+                    if (res && res.status === 'success') {
+                        closeEditCreatedTaskPopup();
+                        alert(res.message || 'Task updated.');
+                        // Update cache locally and re-render instantly — no server call
+                        try {
+                            const cached = await getDataFromIndexedDB(STORE_NAME_CREATED_TASKS, 'taskId');
+                            const existing = Array.isArray(cached) ? cached : [];
+                            const idx = existing.findIndex(t => t.taskId === payload.taskId);
+                            const updated = Object.assign({}, _ectCurrentTask, {
+                                goal: payload.goal,
+                                taskName: payload.taskName,
+                                keyResult: payload.keyResult,
+                                startDate: payload.startDate,
+                                endDate: payload.endDate,
+                                taskEvidence: payload.taskEvidence
+                            });
+                            if (idx > -1) existing[idx] = updated;
+                            else existing.push(updated);
+                            await updateDataInIndexedDB(existing, STORE_NAME_CREATED_TASKS, 'taskId');
+                            renderCreatedTasksTable(existing);
+                        } catch (e) {
+                            loadCreatedTasks();
+                        }
+                    } else {
+                        alert('Failed: ' + (res && res.message ? res.message : 'Server error'));
+                    }
+                })
+                .withFailureHandler(function(err) {
+                    hideLoading();
+                    alert('Error: ' + (err && err.message ? err.message : 'Unknown'));
+                })
+                .updateCreatedTask(payload);
         }
     </script>
 </head>
